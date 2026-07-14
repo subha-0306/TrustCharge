@@ -1,43 +1,20 @@
+# -*- coding: utf-8 -*-
 """
 modules/bank_logic.py
 
-Financing and insurance decision engine for TrustCharge.
-
-Public API
-----------
-bank_decision(health_score, risk_band) -> dict
+Converts Battery Health Score into financing decisions.
+Consumes output from health_score.py — does not recalculate scores.
 """
 
 # ---------------------------------------------------------------------------
-# Decision tables
+# Remarks table
 # ---------------------------------------------------------------------------
-
-# Maps risk_band -> (loan_status, interest_rate, insurance_risk)
-_BAND_TABLE = {
-    "AAA": ("Approved",     "7.5%",  "Very Low"),
-    "AA":  ("Approved",     "8.5%",  "Low"),
-    "A":   ("Approved",     "10.0%", "Low"),
-    "BBB": ("Conditional",  "13.0%", "Moderate"),
-    "BB":  ("Conditional",  "16.5%", "High"),
-    "B":   ("Rejected",     "N/A",   "Very High"),
+REMARKS = {
+    "Approved":      "Battery condition supports standard financing.",
+    "Manual Review": "Battery requires additional inspection before financing.",
+    "High Risk":     "Battery health increases financing risk.",
+    "Rejected":      "Battery health is below financing threshold.",
 }
-
-# Score thresholds for remarks
-_SCORE_REMARKS = [
-    (85, "Battery is in excellent condition — ideal for financing."),
-    (70, "Battery is healthy and suitable for financing."),
-    (55, "Battery shows moderate wear. Conditional approval recommended."),
-    (40, "Battery health is below threshold. Additional inspection required."),
-    (0,  "Battery is in poor condition. Financing not recommended."),
-]
-
-
-def _get_remark(health_score: float) -> str:
-    """Return a human-readable remark based on the composite health score."""
-    for threshold, remark in _SCORE_REMARKS:
-        if health_score >= threshold:
-            return remark
-    return "Insufficient data to assess battery condition."
 
 
 # ---------------------------------------------------------------------------
@@ -45,58 +22,81 @@ def _get_remark(health_score: float) -> str:
 # ---------------------------------------------------------------------------
 def bank_decision(health_score: float, risk_band: str) -> dict:
     """
-    Return a financing and insurance decision for a battery asset.
+    Returns financing and insurance decisions based on Battery Health Score.
 
     Parameters
     ----------
-    health_score : float  0–100   Composite score from calculate_health_score()
-    risk_band    : str            One of: AAA, AA, A, BBB, BB, B
+    health_score : float  0-100  Composite score from calculate_health_score()
+    risk_band    : str           Human-readable band (Excellent/Good/Moderate/Poor/Critical)
 
     Returns
     -------
     dict with keys:
-        loan_status     (str)  Approved / Conditional / Rejected
-        interest_rate   (str)  e.g. "8.5%" or "N/A"
-        insurance_risk  (str)  Very Low / Low / Moderate / High / Very High
-        remarks         (str)  Human-readable summary
+        loan_status    (str)  Approved / Manual Review / High Risk / Rejected
+        interest_rate  (str)  e.g. "8.5%" or "N/A"
+        insurance_risk (str)  Low / Medium / High / Very High
+        trust_level    (str)  Excellent / High / Moderate / Low / Very Low
+        risk_band      (str)  Passed through from health_score output
+        remarks        (str)  Human-readable explanation for the decision
     """
-    band = risk_band.upper().strip()
+    if health_score >= 90:
+        decision  = "Approved"
+        interest  = "7.5%"
+        insurance = "Low"
+        trust     = "Excellent"
 
-    if band not in _BAND_TABLE:
-        return {
-            "loan_status":    "Rejected",
-            "interest_rate":  "N/A",
-            "insurance_risk": "Unknown",
-            "remarks":        f"Unrecognised risk band '{risk_band}'. Cannot process application.",
-        }
+    elif health_score >= 75:
+        decision  = "Approved"
+        interest  = "8.5%"
+        insurance = "Low"
+        trust     = "High"
 
-    loan_status, interest_rate, insurance_risk = _BAND_TABLE[band]
-    remarks = _get_remark(health_score)
+    elif health_score >= 60:
+        decision  = "Manual Review"
+        interest  = "10%"
+        insurance = "Medium"
+        trust     = "Moderate"
 
-    return {
-        "loan_status":    loan_status,
-        "interest_rate":  interest_rate,
-        "insurance_risk": insurance_risk,
-        "remarks":        remarks,
+    elif health_score >= 40:
+        decision  = "High Risk"
+        interest  = "12.5%"
+        insurance = "High"
+        trust     = "Low"
+
+    else:
+        decision  = "Rejected"
+        interest  = "N/A"
+        insurance = "Very High"
+        trust     = "Very Low"
+
+    result = {
+        "loan_status":    decision,
+        "interest_rate":  interest,
+        "insurance_risk": insurance,
+        "trust_level":    trust,
+        "risk_band":      risk_band,
+        "remarks":        REMARKS[decision],
     }
+    return result
 
 
 # ---------------------------------------------------------------------------
 # Quick self-test  (run: python modules/bank_logic.py)
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    test_cases = [
-        {"label": "Excellent — AAA band",   "health_score": 92.0, "risk_band": "AAA"},
-        {"label": "Good — AA band",         "health_score": 78.5, "risk_band": "AA"},
-        {"label": "Moderate — BBB band",    "health_score": 57.0, "risk_band": "BBB"},
-        {"label": "Poor — B band",          "health_score": 28.0, "risk_band": "B"},
-        {"label": "Invalid band",           "health_score": 50.0, "risk_band": "ZZZ"},
+    test_scores = [
+        (95, "Excellent"),
+        (82, "Good"),
+        (68, "Moderate"),
+        (45, "Poor"),
+        (20, "Critical"),
     ]
 
-    for tc in test_cases:
-        result = bank_decision(tc["health_score"], tc["risk_band"])
-        print(f"\n{tc['label']}")
+    for score, band in test_scores:
+        result = bank_decision(score, band)
+        print(f"\nHealth Score: {score}  |  Band: {band}")
         print(f"  Loan Status    : {result['loan_status']}")
         print(f"  Interest Rate  : {result['interest_rate']}")
         print(f"  Insurance Risk : {result['insurance_risk']}")
+        print(f"  Trust Level    : {result['trust_level']}")
         print(f"  Remarks        : {result['remarks']}")

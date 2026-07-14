@@ -1,24 +1,5 @@
-# Virtual environment
 venv/
-env/
-
-# Python cache
 __pycache__/
-*.py[cod]
-*.pyo
-
-# Environment variables
+*.pyc
 .env
-.env.*
-
-# Data files (add exceptions as needed)
-data/*.csv
-data/*.json
-
-# OS files
 .DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/

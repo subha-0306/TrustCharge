@@ -32,13 +32,21 @@ def bank_decision(health_score: float, risk_band: str) -> dict:
     Returns
     -------
     dict with keys:
-        loan_status    (str)  Approved / Manual Review / High Risk / Rejected
-        interest_rate  (str)  e.g. "8.5%" or "N/A"
-        insurance_risk (str)  Low / Medium / High / Very High
-        trust_level    (str)  Excellent / High / Moderate / Low / Very Low
-        risk_band      (str)  Passed through from health_score output
-        remarks        (str)  Human-readable explanation for the decision
+        loan_status    (str)   Approved / Manual Review / High Risk / Rejected
+        eligible       (bool)  True only when loan_status is "Approved"
+        interest_rate  (str)   e.g. "8.5%" or "N/A"
+        insurance_risk (str)   Low / Medium / High / Very High
+        trust_level    (str)   Excellent / High / Moderate / Low / Very Low
+        risk_band      (str)   Passed through from health_score output
+        remarks        (str)   Human-readable explanation for the decision
     """
+    # Guard — accepted values produced by health_score._risk_band()
+    VALID_BANDS = {"Excellent", "Good", "Moderate", "Poor", "Critical"}
+    if risk_band not in VALID_BANDS:
+        raise ValueError(
+            f"Invalid risk_band '{risk_band}'. "
+            f"Expected one of: {sorted(VALID_BANDS)}"
+        )
     if health_score >= 90:
         decision  = "Approved"
         interest  = "7.5%"
@@ -71,6 +79,7 @@ def bank_decision(health_score: float, risk_band: str) -> dict:
 
     result = {
         "loan_status":    decision,
+        "eligible":       decision == "Approved",
         "interest_rate":  interest,
         "insurance_risk": insurance,
         "trust_level":    trust,
@@ -96,6 +105,7 @@ if __name__ == "__main__":
         result = bank_decision(score, band)
         print(f"\nHealth Score: {score}  |  Band: {band}")
         print(f"  Loan Status    : {result['loan_status']}")
+        print(f"  Eligible       : {result['eligible']}")
         print(f"  Interest Rate  : {result['interest_rate']}")
         print(f"  Insurance Risk : {result['insurance_risk']}")
         print(f"  Trust Level    : {result['trust_level']}")

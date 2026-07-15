@@ -1,0 +1,6 @@
+vehicle_id,daily_distance,payload,dwell_time,route_predictability
+EV_001,150.5,800,4.5,0.95
+EV_002,280.2,1500,2.0,0.85
+EV_003,75.0,300,6.0,0.98
+EV_004,320.0,2000,1.5,0.60
+EV_005,110.3,500,8.0,0.90

@@ -1,0 +1,9 @@
+battery_id,batch_id,supplier_id,material_source,quality_check_pass
+BAT_001,BATCH_A,SUP_101,Congo,True
+BAT_002,BATCH_A,SUP_101,Congo,True
+BAT_003,BATCH_B,SUP_102,Chile,False
+BAT_004,BATCH_B,SUP_102,Chile,True
+BAT_005,BATCH_A,SUP_101,Congo,True
+BAT_006,BATCH_C,SUP_103,Australia,True
+BAT_007,BATCH_C,SUP_103,Australia,True
+BAT_008,BATCH_B,SUP_102,Chile,True

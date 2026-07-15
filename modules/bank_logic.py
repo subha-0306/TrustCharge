@@ -1,32 +1,102 @@
+# -*- coding: utf-8 -*-
 """
-bank_logic.py
-Financing and credit-risk logic for EV battery trust scoring.
+modules/bank_logic.py
+
+Converts Battery Health Score into financing decisions.
+Consumes output from health_score.py — does not recalculate scores.
 """
 
-import pandas as pd
-
-
-RISK_BANDS = {
-    "AAA": (90, 100),
-    "AA":  (75, 89),
-    "A":   (60, 74),
-    "BBB": (45, 59),
-    "BB":  (30, 44),
-    "B":   (0,  29),
+# ---------------------------------------------------------------------------
+# Remarks table
+# ---------------------------------------------------------------------------
+REMARKS = {
+    "Approved":      "Battery condition supports standard financing.",
+    "Manual Review": "Battery requires additional inspection before financing.",
+    "High Risk":     "Battery health increases financing risk.",
+    "Rejected":      "Battery health is below financing threshold.",
 }
 
 
-def assign_risk_band(score: float) -> str:
-    """Return the credit risk band for a given health/trust score (0-100)."""
-    for band, (low, high) in RISK_BANDS.items():
-        if low <= score <= high:
-            return band
-    return "Unrated"
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def bank_decision(health_score: float, risk_band: str) -> dict:
+    """
+    Returns financing and insurance decisions based on Battery Health Score.
+
+    Parameters
+    ----------
+    health_score : float  0-100  Composite score from calculate_health_score()
+    risk_band    : str           Human-readable band (Excellent/Good/Moderate/Poor/Critical)
+
+    Returns
+    -------
+    dict with keys:
+        loan_status    (str)  Approved / Manual Review / High Risk / Rejected
+        interest_rate  (str)  e.g. "8.5%" or "N/A"
+        insurance_risk (str)  Low / Medium / High / Very High
+        trust_level    (str)  Excellent / High / Moderate / Low / Very Low
+        risk_band      (str)  Passed through from health_score output
+        remarks        (str)  Human-readable explanation for the decision
+    """
+    if health_score >= 90:
+        decision  = "Approved"
+        interest  = "7.5%"
+        insurance = "Low"
+        trust     = "Excellent"
+
+    elif health_score >= 75:
+        decision  = "Approved"
+        interest  = "8.5%"
+        insurance = "Low"
+        trust     = "High"
+
+    elif health_score >= 60:
+        decision  = "Manual Review"
+        interest  = "10%"
+        insurance = "Medium"
+        trust     = "Moderate"
+
+    elif health_score >= 40:
+        decision  = "High Risk"
+        interest  = "12.5%"
+        insurance = "High"
+        trust     = "Low"
+
+    else:
+        decision  = "Rejected"
+        interest  = "N/A"
+        insurance = "Very High"
+        trust     = "Very Low"
+
+    result = {
+        "loan_status":    decision,
+        "interest_rate":  interest,
+        "insurance_risk": insurance,
+        "trust_level":    trust,
+        "risk_band":      risk_band,
+        "remarks":        REMARKS[decision],
+    }
+    return result
 
 
-def compute_loan_eligibility(df: pd.DataFrame, score_col: str = "health_score") -> pd.DataFrame:
-    """Add risk_band and loan_eligible columns to a DataFrame."""
-    df = df.copy()
-    df["risk_band"] = df[score_col].apply(assign_risk_band)
-    df["loan_eligible"] = df["risk_band"].isin(["AAA", "AA", "A"])
-    return df
+# ---------------------------------------------------------------------------
+# Quick self-test  (run: python modules/bank_logic.py)
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    test_scores = [
+        (95, "Excellent"),
+        (82, "Good"),
+        (68, "Moderate"),
+        (45, "Poor"),
+        (20, "Critical"),
+    ]
+
+    for score, band in test_scores:
+        result = bank_decision(score, band)
+        print(f"\nHealth Score: {score}  |  Band: {band}")
+        print(f"  Loan Status    : {result['loan_status']}")
+        print(f"  Interest Rate  : {result['interest_rate']}")
+        print(f"  Insurance Risk : {result['insurance_risk']}")
+        print(f"  Trust Level    : {result['trust_level']}")
+        print(f"  Remarks        : {result['remarks']}")

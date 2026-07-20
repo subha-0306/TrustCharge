@@ -1,1193 +1,405 @@
+
 import streamlit as st
 import streamlit.components.v1 as components
 from datetime import datetime
+import pandas as pd
+import numpy as np
 
-# -------------------------------------------------
+# Load Live Data
+try:
+    df_bms = pd.read_csv("data/synthetic_bms.csv")
+except Exception:
+    df_bms = pd.DataFrame()
+
+try:
+    df_supply = pd.read_csv("data/supply_chain.csv")
+except Exception:
+    df_supply = pd.DataFrame()
+
+# Calculate Live Stats
+if not df_bms.empty:
+    total_vehicles = len(df_bms)
+    avg_health = int(round(df_bms["state_of_health"].mean()))
+    critical_count = len(df_bms[df_bms["failure_risk"] == "Critical"])
+    warning_count = len(df_bms[df_bms["failure_risk"] == "High"])
+    healthy_count = len(df_bms[df_bms["failure_risk"] == "Low"])
+    medium_count = len(df_bms[df_bms["failure_risk"] == "Medium"])
+    
+    cnt_healthy = healthy_count + medium_count
+    cnt_warning = warning_count
+    cnt_critical = critical_count
+    cnt_offline = len(df_bms[df_bms["maintenance_due"] == "Yes"])
+    
+    avg_rul = int(round(df_bms["rul_days"].mean()))
+    anomalies_count = len(df_bms[df_bms["failure_risk"].isin(["High", "Critical"])])
+    unique_mfg = df_bms["batch_id"].nunique()
+    
+    # Selected sample vehicle for dashboard details
+    critical_veh = df_bms[df_bms["failure_risk"] == "Critical"]
+    if not critical_veh.empty:
+        sample_veh = critical_veh.iloc[0]
+    else:
+        sample_veh = df_bms.iloc[0]
+else:
+    total_vehicles = 850
+    avg_health = 92
+    cnt_healthy = 580
+    cnt_warning = 153
+    cnt_critical = 68
+    cnt_offline = 49
+    avg_rul = 530
+    anomalies_count = 3
+    unique_mfg = 4
+    sample_veh = {
+        "vehicle_id": "EV-5F24189F",
+        "state_of_health": 92.0,
+        "rul_days": 530,
+        "failure_risk": "Low",
+        "maintenance_due": "No",
+        "charge_cycles": 185
+    }
+
 # PAGE CONFIGURATION
 # -------------------------------------------------
 st.set_page_config(
     page_title="TrustCharge | EV Battery Intelligence Platform",
-    page_icon="⚡",
+    page_icon="https://fonts.gstatic.com/s/i/short-term/release/googlesymbols/bolt/default/24px.svg",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# =================================================================
-# MASTER CSS — CSS Variables for Light/Dark Theme + All Global Styles
-# =================================================================
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap');
+# Import unified design system
+from utils.ui_components import inject_master_ui
 
-    /* ── Dark Mode (default) ── */
-    :root {
-        --bg:           #080B0E;
-        --bg2:          #0F1319;
-        --sidebar:      #0F1319;
-        --card:         #0F1319;
-        --navbar:       #0F1319;
-        --search-bg:    #151B22;
-        --border:       #1E252D;
-        --border-soft:  #161B22;
-        --accent:       #00D9B5;
-        --accent-hover: #00BFA2;
-        --text:         #9EAEB8;
-        --text-title:   #EDEFF1;
-        --muted:        #5A6E7F;
-        --muted2:       #3A4D5C;
-        --warn:         #F59E0B;
-        --danger:       #EF4444;
-        --success:      #10B981;
-        --shadow:       rgba(0, 0, 0, 0.35);
-        --hover-bg:     rgba(0, 217, 181, 0.08);
-        --selection:    rgba(0, 217, 181, 0.15);
-        --radius-lg:    12px;
-        --radius-md:    8px;
-        --radius-sm:    6px;
-        --transition:   all 0.18s ease-in-out;
-    }
+# Toast messages alert handler
+if "action" in st.query_params:
+    action = st.query_params["action"]
+    if action == "logout":
+        st.toast("Session closed successfully", icon="🔒")
+    st.query_params.clear()
 
-    /* ── Light Mode overrides (OLA / Ather / Siemens theme) ── */
-    [data-theme="light"] {
-        --bg:           #EEF3F2;
-        --bg2:          #E7EFEE;
-        --sidebar:      #DEE9E7;
-        --card:         #FCFDFD;
-        --navbar:       #F5F8F8;
-        --search-bg:    #E7EFEE;
-        --border:       #D4E2DF;
-        --border-soft:  #D4E2DF;
-        --accent:       #17BFA8;
-        --accent-hover: #14A692;
-        --secondary-accent: #4E7A76;
-        --muted-accent: #7D8E91;
-        --text-title:   #26343C;
-        --text:         #55636B;
-        --muted:        #7D8B90;
-        --muted2:       #7D8E91;
-        --success:      #36A972;
-        --warn:         #E6A33B;
-        --danger:       #D9534F;
-        --shadow:       rgba(35, 49, 58, 0.04);
-        --hover-bg:     #F3F8F8;
-        --selection:    #DEE9E7;
-    }
+# Query parameter Page Router
+active_page = st.query_params.get("page", "dashboard")
 
-    html, body, [data-testid="stAppViewContainer"] {
-        background-color: var(--bg) !important;
-        color: var(--text) !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-        transition: var(--transition);
-    }
-
-    /* Spacing & Layout overrides */
-
-
-    div.block-container {
-        padding-top: 80px !important;
-        padding-bottom: 0px !important;
-        padding-left: 32px !important;
-        padding-right: 32px !important;
-        max-width: 1350px;
-        margin: 0 auto;
-        display: flex !important;
-        flex-direction: column !important;
-        min-height: calc(100vh - 80px) !important;
-    }
-
-    div[data-testid="stVerticalBlock"] {
-        display: flex !important;
-        flex-direction: column !important;
-        flex-grow: 1 !important;
-    }
-
-    /* Push the footer to the bottom */
-    div:has(> .footer), div[data-testid="element-container"]:has(> .footer) {
-        margin-top: auto !important;
-    }
-
-    [data-testid="stHeader"] {
-        display: none !important;
-    }
-
-    [data-testid="stSidebar"] {
-        background-color: var(--sidebar) !important;
-        border-right: 1px solid var(--border-soft) !important;
-        transition: var(--transition);
-    }
-
-    /* Sidebar nav items */
-    [data-testid="stSidebarNavLink"] {
-        border-radius: var(--radius-md) !important;
-        margin: 3px 12px !important;
-        padding: 6px 14px !important;
-        transition: var(--transition) !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-        font-weight: 500 !important;
-        color: var(--text) !important;
-    }
-    [data-testid="stSidebarNavLink"]:hover {
-        background-color: var(--hover-bg) !important;
-        color: var(--accent) !important;
-    }
-    [data-testid="stSidebarNavLink"][aria-current="page"] {
-        background-color: var(--selection) !important;
-        color: var(--text-title) !important;
-        border-left: 3px solid var(--accent) !important;
-        font-weight: 600 !important;
-    }
-
-    /* ── CARDS ── */
-    .card {
-        background-color: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        padding: 24px;
-        box-shadow: 0 4px 12px var(--shadow);
-        transition: var(--transition);
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        position: relative;
-    }
-    .card:hover {
-        border-color: var(--accent);
-        box-shadow: 0 8px 20px var(--shadow);
-    }
-
-    /* ── KPI CARDS ── */
-    .kpi-card {
-        background-color: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        padding: 20px 18px;
-        box-shadow: 0 4px 12px var(--shadow);
-        height: 100%;
-        transition: var(--transition);
-    }
-    .kpi-card:hover {
-        border-color: var(--accent);
-        box-shadow: 0 8px 20px var(--shadow);
-    }
-    .kpi-val {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 1.7rem;
-        font-weight: 700;
-        color: var(--text-title);
-        line-height: 1.1;
-        margin-bottom: 6px;
-        letter-spacing: -0.02em;
-        transition: var(--transition);
-    }
-    .kpi-lbl {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.62rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: var(--muted);
-        font-weight: 600;
-    }
-    .kpi-trend {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.6rem;
-        color: var(--success);
-        margin-top: 4px;
-    }
-
-    /* ── BUTTONS ── */
-    .btn {
-        display: inline-block;
-        padding: 10px 24px;
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-decoration: none !important;
-        border-radius: var(--radius-md);
-        transition: var(--transition);
-        text-align: center;
-        cursor: pointer;
-    }
-    .btn-primary {
-        background-color: var(--accent);
-        color: var(--bg) !important;
-        border: 1px solid var(--accent);
-        box-shadow: 0 2px 4px var(--shadow);
-    }
-    .btn-primary:hover {
-        background-color: var(--accent-hover);
-        border-color: var(--accent-hover);
-        box-shadow: 0 4px 8px var(--shadow);
-    }
-    .btn-primary:active {
-        transform: translateY(0);
-    }
-    .btn-secondary {
-        background-color: transparent;
-        border: 1px solid var(--border);
-        color: var(--text) !important;
-        box-shadow: 0 1px 2px var(--shadow);
-    }
-    .btn-secondary:hover {
-        border-color: var(--accent);
-        background-color: var(--hover-bg);
-        color: var(--accent) !important;
-    }
-    .btn-secondary:active {
-        transform: translateY(0);
-    }
-    .btn-full { width: 100%; box-sizing: border-box; }
-
-
-
-    /* ── HERO ── */
-    .hero-wordmark {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.72rem;
-        font-weight: 700;
-        color: var(--accent);
-        text-transform: uppercase;
-        letter-spacing: 0.15em;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .hero-wordmark::before {
-        content: '';
-        display: inline-block;
-        width: 18px;
-        height: 1px;
-        background-color: var(--accent);
-    }
-    .hero-headline {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 3.2rem;
-        font-weight: 700;
-        line-height: 1.15;
-        letter-spacing: -0.03em;
-        color: var(--text-title);
-        margin-bottom: 12px;
-        transition: var(--transition);
-    }
-    .hero-headline span { color: var(--accent); }
-    .hero-subtitle {
-        font-size: 1rem;
-        line-height: 1.6;
-        color: var(--text);
-        margin-bottom: 14px;
-        max-width: 620px;
-    }
-
-    .section-label {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.65rem;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        color: var(--muted);
-        margin-top: 40px;
-        margin-bottom: 6px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    .section-label::after {
-        content: '';
-        display: block;
-        flex: 1;
-        height: 1px;
-        background-color: var(--border-soft);
-    }
-    .section-title {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 1.4rem;
-        font-weight: 700;
-        margin-top: 6px;
-        margin-bottom: 20px;
-        letter-spacing: -0.02em;
-        color: var(--text-title);
-        transition: var(--transition);
-    }
-
-    /* ── MODULE CARDS ── */
-    .mod-card {
-        background-color: var(--card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius-lg);
-        padding: 24px;
-        height: 310px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        position: relative;
-        box-shadow: 0 4px 12px var(--shadow);
-        transition: var(--transition);
-    }
-    .mod-card.alt-bg {
-        background-color: var(--bg2);
-    }
-    .mod-card:hover {
-        border-color: var(--accent);
-        box-shadow: 0 8px 24px var(--shadow);
-        transform: translateY(-2px);
-    }
-    .mod-corner {
-        position: absolute;
-        top: 12px;
-        right: 16px;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.58rem;
-        color: var(--muted);
-        letter-spacing: 0.08em;
-        transition: var(--transition);
-    }
-    .mod-card:hover .mod-corner { color: var(--accent); }
-    .mod-id {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.58rem;
-        color: var(--muted);
-        letter-spacing: 0.1em;
-        text-transform: uppercase;
-        margin-bottom: 8px;
-    }
-    .mod-title-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 8px;
-    }
-    .status-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background-color: var(--accent);
-        box-shadow: 0 0 6px var(--accent);
-        flex-shrink: 0;
-        animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50%       { opacity: 0.35; }
-    }
-    .mod-title-text {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.95rem;
-        font-weight: 700;
-        color: var(--text-title);
-        text-transform: uppercase;
-        letter-spacing: 0.02em;
-    }
-    .mod-desc-text {
-        font-size: 0.82rem;
-        color: var(--text);
-        line-height: 1.55;
-        margin-bottom: 0;
-    }
-    .mod-btn {
-        display: block;
-        width: 100%;
-        box-sizing: border-box;
-        padding: 9px 16px;
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.72rem;
-        font-weight: 600;
-        text-transform: none;
-        letter-spacing: 0;
-        text-align: center;
-        text-decoration: none !important;
-        border: 1px solid var(--border);
-        background-color: transparent;
-        color: var(--text) !important;
-        border-radius: var(--radius-md);
-        box-shadow: 0 1px 2px var(--shadow);
-        transition: var(--transition);
-        margin-top: 14px;
-    }
-    .mod-btn:hover {
-        background-color: var(--accent);
-        border-color: var(--accent);
-        color: var(--bg) !important;
-        box-shadow: 0 4px 8px var(--shadow);
-        transform: translateY(-1px);
-    }
-    .mod-btn:active {
-        transform: translateY(0);
-    }
-
-    /* ── STATUS BADGES ── */
-    .badge {
-        display: inline-block;
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.65rem;
-        font-weight: 600;
-        padding: 2px 8px;
-        border-radius: 12px;
-        text-transform: uppercase;
-    }
-    .badge-healthy  { color: #10B981; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); }
-    .badge-warning  { color: #F59E0B; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); }
-    .badge-critical { color: #EF4444; background: rgba(239,68,68,0.08);  border: 1px solid rgba(239,68,68,0.2); }
-    .badge-online   { color: #00D9B5; background: rgba(0,217,181,0.08);  border: 1px solid rgba(0,217,181,0.2); }
-    .badge-processing { color: #3B82F6; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); }
-
-
-    /* ── QUICK ACTIONS ── */
-    .qa-bar {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-    }
-
-    .qa-btn {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: var(--text);
-        background: var(--card);
-        border: 1px solid var(--border);
-        padding: 8px 18px;
-        text-transform: none;
-        letter-spacing: 0;
-        cursor: pointer;
-        border-radius: var(--radius-md);
-        box-shadow: 0 1px 2px var(--shadow);
-        transition: var(--transition);
-        text-decoration: none;
-        display: inline-block;
-    }
-    .qa-btn:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-        transform: translateY(-1px);
-        box-shadow: 0 2px 6px var(--shadow);
-    }
-    .qa-btn:active { transform: translateY(0); }
-    .qa-btn.primary {
-        background: var(--accent);
-        color: var(--bg);
-        border-color: var(--accent);
-        box-shadow: 0 2px 4px var(--shadow);
-    }
-    .qa-btn.primary:hover {
-        background: var(--accent-hover);
-        border-color: var(--accent-hover);
-        box-shadow: 0 4px 8px var(--shadow);
-    }
-
-    /* ── SHIMMER SKELETON ── */
-    @keyframes shimmer {
-        0%   { background-position: -600px 0; }
-        100% { background-position: 600px 0; }
-    }
-    .skeleton {
-        background: linear-gradient(90deg, var(--card) 25%, var(--border-soft) 50%, var(--card) 75%);
-        background-size: 600px 100%;
-        animation: shimmer 1.4s infinite;
-        border-radius: 4px;
-    }
-
-    /* ── TICKER ── */
-    .ticker-wrap {
-        width: 100%;
-        overflow: hidden;
-        background-color: var(--bg2);
-        border: 1px solid var(--border-soft);
-        border-left: 3px solid var(--accent);
-        padding: 5px 0;
-        margin-top: 6px;
-        margin-bottom: 12px;
-        border-radius: var(--radius-md);
-        transition: var(--transition);
-    }
-    .ticker-track {
-        display: flex;
-        width: max-content;
-        animation: ticker-scroll 28s linear infinite;
-        white-space: nowrap;
-    }
-    .ticker-item {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.65rem;
-        font-weight: 600;
-        color: var(--muted);
-        padding: 0 36px;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-    }
-    .ticker-item .live { color: var(--accent); }
-    .ticker-item .warn { color: var(--warn); }
-    .ticker-sep { color: var(--border-soft); margin: 0 8px; }
-
-    /* ── FOOTER ── */
-    .footer {
-        border-top: 1px solid var(--border-soft);
-        padding: 16px 0;
-        margin-top: 36px;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.65rem;
-        color: var(--muted);
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        text-align: center;
-        transition: var(--transition);
-    }
-
-    /* Sticky Navbar Iframe styles */
-    iframe[height="72"] {
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        width: 100vw !important;
-        height: 72px !important;
-        z-index: 9999 !important;
-        border: none !important;
-        border-bottom: 1px solid var(--border-soft) !important;
-        box-shadow: 0 2px 8px var(--shadow) !important;
-    }
-
-    /* ── TOAST NOTIFICATIONS ── */
-    .toast-container {
-        position: fixed;
-        bottom: 90px;
-        right: 24px;
-        z-index: 99999;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        pointer-events: none;
-    }
-    @keyframes slideIn  { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes slideOut { from { opacity:1; transform:translateY(0); }   to { opacity:0; transform:translateY(20px); } }
-    .toast {
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.75rem;
-        font-weight: 600;
-        background-color: var(--bg2);
-        border: 1px solid var(--border);
-        border-left: 3px solid var(--accent);
-        color: var(--text-title);
-        padding: 12px 18px;
-        border-radius: var(--radius-md);
-        box-shadow: 0 4px 16px var(--shadow);
-        min-width: 280px;
-        animation: slideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        pointer-events: all;
-        opacity: 0;
-        display: flex;
-        align-items: center;
-    }
-    .toast.out { animation: slideOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-    .toast .toast-label { color: var(--accent); margin-right: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; text-transform: uppercase; }
-
-    h1, h2, h3, h4, h5, h6, .section-title { color: var(--text-title) !important; transition: var(--transition); }
-    hr { border-color: var(--border-soft) !important; }
-</style>
-""", unsafe_allow_html=True)
-
-# =================================================================
-# ENTERPRISE NAVBAR — Theme toggle, Search, Notifications, Profile
-
-NAVBAR_HTML = """
-<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
-    * { margin:0; padding:0; box-sizing:border-box; }
-    :root {
-        --bg:      #080B0E;
-        --card:    #0F1319;
-        --border:  #1E252D;
-        --accent:  #00D9B5;
-        --text:    #EDEFF1;
-        --muted:   #5A6E7F;
-        --shadow:  rgba(0,0,0,.35);
-        --navbar:  #0F1319;
-        --search-bg: #151B22;
-        --radius-lg: 12px;
-        --radius-md: 8px;
-        --radius-sm: 6px;
-    }
-    [data-theme="light"] {
-        --bg:      #EEF3F2;
-        --card:    #FCFDFD;
-        --border:  #D4E2DF;
-        --accent:  #17BFA8;
-        --text:    #55636B;
-        --muted:   #7D8B90;
-        --shadow:  rgba(35, 49, 58, 0.04);
-        --navbar:  #F5F8F8;
-        --search-bg: #E7EFEE;
-    }
-    body { background:var(--navbar); font-family:'Space Grotesk',sans-serif; color:var(--text); transition:background .2s, color .2s; }
-    .nav-container {
-        display:flex; align-items:center; justify-content:space-between;
-        max-width:1350px; margin:0 auto; padding:0 32px; height:72px;
-    }
-    .nav-left { display:flex; align-items:center; gap:24px; flex:1; }
-    .logo { font-size:1.05rem; font-weight:700; color:var(--text); letter-spacing:-0.02em; display:flex; align-items:center; gap:6px; cursor:pointer; text-decoration:none; }
-    .logo span { color: var(--accent); }
-    .search-wrap {
-        width: 380px; display:flex; align-items:center;
-        background:var(--search-bg); border:1px solid var(--border);
-        padding:8px 14px; gap:8px; border-radius:var(--radius-md);
-        transition:all .15s ease-in-out;
-        height: 38px;
-    }
-    .search-wrap:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px rgba(23, 191, 168, 0.15); }
-    .search-icon { color:var(--muted); font-size:12px; flex-shrink:0; }
-    .search-input {
-        flex:1; background:transparent; border:none; outline:none;
-        font-family:'Space Grotesk',sans-serif; font-size:0.8rem;
-        color:var(--text);
-    }
-    .search-input::placeholder { color:var(--muted); }
-    .nav-right { display:flex; align-items:center; gap:16px; }
-    
-    /* Deploy Button */
-    .deploy-btn {
-        background: var(--accent); color: var(--bg) !important; border: none;
-        padding: 8px 16px; border-radius: var(--radius-md);
-        font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; font-weight: 600;
-        cursor: pointer; display: flex; align-items: center; justify-content: center;
-        transition: all .15s ease-in-out;
-        box-shadow: 0 2px 4px var(--shadow);
-    }
-    .deploy-btn:hover {
-        opacity: 0.9;
-        transform: translateY(-1px);
-    }
-    .deploy-btn:active { transform: translateY(0); }
-
-    /* Buttons / icons */
-    .nav-btn {
-        position:relative; background:var(--card); border:1px solid var(--border);
-        width: 38px; height: 38px; border-radius: var(--radius-md);
-        cursor:pointer; color:var(--text);
-        display: flex; align-items: center; justify-content: center;
-        transition:all .15s ease-in-out;
-        box-shadow: 0 1px 2px var(--shadow);
-    }
-    .nav-btn:hover { border-color:var(--accent); color:var(--accent); transform: translateY(-1px); }
-    .nav-btn:active { transform: translateY(0); }
-
-    .badge {
-        position:absolute; top:-4px; right:-4px;
-        min-width:16px; height:16px; border-radius:50%;
-        background:#EF4444; color:#FFFFFF;
-        font-family:'JetBrains Mono',monospace; font-size:0.55rem; font-weight:700;
-        display:flex; align-items:center; justify-content:center; padding: 0 3px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-    }
-    .avatar {
-        width:38px; height:38px; border-radius:50%;
-        background:var(--card); color:var(--accent);
-        font-family:'Space Grotesk',sans-serif; font-size:0.85rem; font-weight:700;
-        display:flex; align-items:center; justify-content:center;
-        cursor:pointer; border:1px solid var(--border);
-        transition:all .15s ease-in-out;
-        box-shadow: 0 1px 2px var(--shadow);
-    }
-    .avatar:hover { border-color:var(--accent); transform: translateY(-1px); }
-    
-    .theme-btn {
-        background:var(--card); border:1px solid var(--border);
-        width: 38px; height: 38px; border-radius: var(--radius-md);
-        cursor:pointer; color:var(--text);
-        display: flex; align-items: center; justify-content: center;
-        transition:all .15s ease-in-out;
-        box-shadow: 0 1px 2px var(--shadow);
-    }
-    .theme-btn:hover { border-color:var(--accent); color:var(--accent); transform: translateY(-1px); }
-
-    /* Dropdowns */
-    .dropdown {
-        position:absolute; top:calc(100% + 8px); right:0;
-        background:var(--card); border:1px solid var(--border);
-        border-radius: var(--radius-lg);
-        min-width:280px; box-shadow:0 10px 30px var(--shadow);
-        display:none; z-index:999;
-        transform: translateY(10px); opacity: 0;
-        animation: slideDown .2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    @keyframes slideDown {
-        to { transform: translateY(0); opacity: 1; }
-    }
-    .dropdown.open { display:block; }
-    .dropdown-header {
-        font-family:'Space Grotesk',sans-serif; font-size:0.75rem; font-weight:700;
-        text-transform:uppercase; letter-spacing:.05em; color:var(--text);
-        padding:12px 16px; border-bottom:1px solid var(--border);
-        display:flex; justify-content:space-between; align-items:center;
-    }
-    .dropdown-actions { display:flex; gap:8px; }
-    .d-action {
-        font-family:'Space Grotesk',sans-serif; font-size:0.68rem; font-weight:600;
-        color:var(--accent); cursor:pointer; text-transform:none;
-        background:none; border:none;
-    }
-    .d-action:hover { text-decoration: underline; }
-    
-    .notif-item {
-        padding:12px 16px; border-bottom:1px solid var(--border);
-        transition:background .15s; cursor:pointer;
-    }
-    .notif-item:hover { background:var(--search-bg); }
-    .notif-item:last-child { border-bottom:none; }
-    .notif-title { font-size:0.75rem; color:var(--text); margin-bottom:4px; font-weight:500; line-height: 1.35; }
-    .notif-time  { font-family:'JetBrains Mono',monospace; font-size:0.6rem; color:var(--muted); }
-    
-    .notif-dot { width:6px; height:6px; border-radius:50%; display:inline-block; margin-right:6px; flex-shrink:0; }
-    .notif-dot.alert { background: #EF4444; }
-    .notif-dot.warning { background: #F59E0B; }
-    .notif-dot.info { background: #3B82F6; }
-    .notif-dot.success { background: #10B981; }
-    
-    .notif-row { display:flex; align-items:flex-start; gap:8px; }
-    
-    .profile-item {
-        padding:10px 16px; display:flex; align-items:center; gap:12px;
-        cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border);
-        font-size:0.8rem; color:var(--text);
-    }
-    .profile-item:hover { background:var(--search-bg); color:var(--accent); }
-    .profile-item:last-child { border-bottom:none; }
-    .pi-icon { color:var(--muted); font-size:14px; width:16px; text-align:center; }
-    .profile-item:hover .pi-icon { color:var(--accent); }
-    
-    svg { display:block; }
-    .rel { position:relative; }
-</style>
-</head><body>
-<div class="nav-container">
-    <div class="nav-left">
-        <!-- Logo & Wordmark -->
-        <a class="logo" href="#" target="_self">⚡ <span>TrustCharge</span></a>
-        <!-- Search -->
-        <div class="search-wrap">
-            <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-            </svg>
-            <input class="search-input" type="text" placeholder="Search fleet, battery ID, manufacturer, VIN..."/>
-        </div>
+if active_page == "profile":
+    inject_master_ui("Settings")
+    st.markdown('<div style="max-width: 600px; margin: 40px auto; padding: 0 16px;">', unsafe_allow_html=True)
+    st.markdown("""
+    <div style="margin-bottom: 24px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;">User Profile & Settings</div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--primary-text); margin: 0; text-transform: uppercase; letter-spacing: -0.02em;">Edit Settings</h1>
     </div>
-
-    <div class="nav-right">
-        <!-- Deploy Button -->
-        <button class="deploy-btn" onclick="showDeployToast()">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px;">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Deploy
-        </button>
-
-        <!-- Theme Toggle -->
-        <button class="theme-btn" id="themeBtn" onclick="toggleTheme()" title="Toggle Theme">
-            <span id="themeIcon"></span>
-        </button>
-
-        <!-- Notification Bell -->
-        <div class="rel">
-            <button class="nav-btn" onclick="toggleDrop('notifDrop')" title="Notifications">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-                <span class="badge" id="notifBadge">5</span>
-            </button>
-            <div class="dropdown" id="notifDrop">
-                <div class="dropdown-header">
-                    <span>Notifications</span>
-                    <div class="dropdown-actions">
-                        <button class="d-action" onclick="markAllRead()">Mark Read</button>
-                        <button class="d-action" onclick="clearAll()">Clear All</button>
-                    </div>
-                </div>
-                <div id="notifList">
-                    <div class="notif-item"><div class="notif-row"><span class="notif-dot alert"></span><div><div class="notif-title">Battery #204 health dropped below 72%</div><div class="notif-time">2 min ago</div></div></div></div>
-                    <div class="notif-item"><div class="notif-row"><span class="notif-dot warning"></span><div><div class="notif-title">Fleet Alpha requires maintenance</div><div class="notif-time">14 min ago</div></div></div></div>
-                    <div class="notif-item"><div class="notif-row"><span class="notif-dot info"></span><div><div class="notif-title">AI model generated a new prediction</div><div class="notif-time">1 hr ago</div></div></div></div>
-                    <div class="notif-item"><div class="notif-row"><span class="notif-dot success"></span><div><div class="notif-title">Manufacturer batch successfully verified</div><div class="notif-time">3 hr ago</div></div></div></div>
-                    <div class="notif-item"><div class="notif-row"><span class="notif-dot info"></span><div><div class="notif-title">Firmware update available for EV-Series 7</div><div class="notif-time">Yesterday</div></div></div></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- User Profile -->
-        <div class="rel">
-            <div class="avatar" onclick="toggleDrop('profileDrop')">SK</div>
-            <div class="dropdown" id="profileDrop">
-                <div class="dropdown-header"><span>Shruti K &nbsp;/&nbsp; Admin</span></div>
-                <div class="profile-item" onclick="profileAction('Profile')"><span class="pi-icon">&#9679;</span> Profile</div>
-                <div class="profile-item" onclick="profileAction('Settings')"><span class="pi-icon">&#9881;</span> Settings</div>
-                <div class="profile-item" onclick="profileAction('Appearance')"><span class="pi-icon">&#9728;</span> Appearance</div>
-                <div class="profile-item" style="color:#EF4444;" onclick="profileAction('Logout')"><span class="pi-icon" style="color:#EF4444;">&#10006;</span> Logout</div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-// Theme system — communicates with parent page via postMessage
-const DARK_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>`;
-const MOON_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
-let dark = (window.parent.localStorage.getItem('tc_theme') || 'dark') === 'dark';
-
-function applyTheme() {
-    const root = document.documentElement;
-    if (dark) {
-        root.removeAttribute('data-theme');
-        document.getElementById('themeIcon').innerHTML = DARK_ICON;
-    } else {
-        root.setAttribute('data-theme','light');
-        document.getElementById('themeIcon').innerHTML = MOON_ICON;
-    }
-    // Propagate to parent Streamlit page
-    window.parent.document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    window.parent.localStorage.setItem('tc_theme', dark ? 'dark' : 'light');
+    """, unsafe_allow_html=True)
     
-    // Broadcast to all other iframes
-    const frames = window.parent.document.querySelectorAll('iframe');
-    frames.forEach(f => {
-        try {
-            f.contentWindow.postMessage({ type: 'theme-change', theme: dark ? 'dark' : 'light' }, '*');
-        } catch(e) {}
-    });
-}
-function toggleTheme() { dark = !dark; applyTheme(); }
-applyTheme();
+    st.session_state.setdefault("profile_name", "Shruti K")
+    st.session_state.setdefault("profile_role", "Administrator")
+    st.session_state.setdefault("profile_email", "shruti.k@trustcharge.com")
+    st.session_state.setdefault("profile_notif", True)
+    
+    with st.container():
+        st.markdown('<div class="card" style="padding: 24px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); box-shadow: 0 4px 12px var(--shadow);">', unsafe_allow_html=True)
+        name_val = st.text_input("Full Name", value=st.session_state["profile_name"])
+        role_val = st.text_input("Role / Title", value=st.session_state["profile_role"])
+        email_val = st.text_input("Email Address", value=st.session_state["profile_email"])
+        notif_val = st.checkbox("Enable Real-time Fleet Alerts", value=st.session_state["profile_notif"])
+        
+        st.markdown('<div style="height:12px;"></div>', unsafe_allow_html=True)
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("Save Changes", use_container_width=True, type="primary"):
+                st.session_state["profile_name"] = name_val
+                st.session_state["profile_role"] = role_val
+                st.session_state["profile_email"] = email_val
+                st.session_state["profile_notif"] = notif_val
+                st.query_params.clear()
+                st.rerun()
+        with col2:
+            if st.button("Cancel", use_container_width=True):
+                st.query_params.clear()
+                st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
 
-// Dropdowns
-function toggleDrop(id) {
-    document.querySelectorAll('.dropdown').forEach(d => { if(d.id !== id) d.classList.remove('open'); });
-    document.getElementById(id).classList.toggle('open');
-}
-document.addEventListener('click', function(e) {
-    if (!e.target.closest('.rel')) document.querySelectorAll('.dropdown').forEach(d => d.classList.remove('open'));
-});
+elif active_page == "vehicles":
+    inject_master_ui("Vehicles")
+    st.markdown("""
+    <div style="margin-bottom: 24px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;">Fleet Management</div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--primary-text); margin: 0; text-transform: uppercase; letter-spacing: -0.02em;">EV Fleet Vehicles Registry</h1>
+        <p style="color: var(--text); font-size: 0.9rem; margin-top: 4px;">Search and view telemetry status metrics for all active battery packs and electric vehicle assets.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if not df_bms.empty:
+        search_q = st.text_input("🔍 Quick Search Vehicle ID, Batch, Risk...", placeholder="Type vehicle ID (e.g. EV-00)...")
+        filtered_df = df_bms.copy()
+        if search_q:
+            filtered_df = filtered_df[
+                filtered_df["vehicle_id"].str.contains(search_q, case=False) |
+                filtered_df["batch_id"].str.contains(search_q, case=False) |
+                filtered_df["failure_risk"].str.contains(search_q, case=False)
+            ]
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.dataframe(filtered_df[["vehicle_id", "batch_id", "state_of_health", "charge_cycles", "temperature", "failure_risk", "maintenance_due"]], use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("No vehicles database loaded.")
+    st.stop()
 
-// Notifications
-function markAllRead() {
-    document.querySelectorAll('.notif-dot').forEach(d => d.style.opacity = '0');
-    document.getElementById('notifBadge').textContent = '0';
-    showToast('INFO', 'All notifications marked as read');
-}
-// Clear All
-function clearAll() {
-    document.getElementById('notifList').innerHTML = '<div style="padding:16px;font-family:Space Grotesk,sans-serif;font-size:0.75rem;color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:.04em;">No notifications</div>';
-    document.getElementById('notifBadge').textContent = '0';
-    showToast('INFO', 'Notifications cleared');
-}
+elif active_page == "predictions":
+    inject_master_ui("AI Predictions")
+    st.markdown("""
+    <div style="margin-bottom: 24px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;">AI Predictive Analytics</div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--primary-text); margin: 0; text-transform: uppercase; letter-spacing: -0.02em;">Battery Degradation & Failure Forecasts</h1>
+        <p style="color: var(--text); font-size: 0.9rem; margin-top: 4px;">Machine learning forecasts estimating remaining useful life, failure probability, and cell anomalies.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if not df_bms.empty:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Avg Predicted RUL", f"{int(round(df_bms['rul_days'].mean()))} Days")
+        c2.metric("Critical Risk Level Pack Assets", f"{len(df_bms[df_bms['failure_risk'] == 'Critical'])}")
+        c3.metric("Anomalies Detected Today", f"{len(df_bms[df_bms['failure_risk'].isin(['High', 'Critical'])])}")
+        
+        st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
+        col_hist, col_high = st.columns([3, 2], gap="large")
+        with col_hist:
+            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
+            st.subheader("RUL Forecast Distribution Curve")
+            import plotly.express as px
+            from utils.ui_components import apply_plotly_theme
+            fig_rul = px.histogram(df_bms, x="rul_days", nbins=20, color_discrete_sequence=["#18E7D3"], labels={"rul_days": "Remaining Useful Life (Days)"})
+            apply_plotly_theme(fig_rul)
+            st.plotly_chart(fig_rul, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with col_high:
+            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
+            st.subheader("Critical Warning Log")
+            crit_assets = df_bms[df_bms["failure_risk"].isin(["High", "Critical"])][["vehicle_id", "state_of_health", "failure_risk"]]
+            st.dataframe(crit_assets, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("No prediction telemetry active.")
+    st.stop()
 
-// Custom event triggers
-function showDeployToast() {
-    window.parent.postMessage({ type: 'show-toast', label: 'DEPLOY', text: 'Production deployment initiated' }, '*');
-}
-function profileAction(action) {
-    window.parent.postMessage({ type: 'show-toast', label: 'USER', text: action + ' settings accessed' }, '*');
-}
-function showToast(label, text) {
-    window.parent.postMessage({ type: 'show-toast', label: label, text: text }, '*');
-}
+elif active_page == "analytics":
+    inject_master_ui("Analytics")
+    st.markdown("""
+    <div style="margin-bottom: 24px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;">Deep Data Insights</div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--primary-text); margin: 0; text-transform: uppercase; letter-spacing: -0.02em;">Fleet Telemetry & Trend Analytics</h1>
+        <p style="color: var(--text); font-size: 0.9rem; margin-top: 4px;">Advanced charts analyzing internal resistance, cycles completed, temperature excursions, and health spreads.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if not df_bms.empty:
+        import plotly.express as px
+        from utils.ui_components import apply_plotly_theme
+        
+        col_a1, col_a2 = st.columns(2, gap="large")
+        with col_a1:
+            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
+            st.subheader("State of Health vs Charge Cycles Spread")
+            fig_scat = px.scatter(df_bms, x="charge_cycles", y="state_of_health", color="failure_risk", color_discrete_sequence=["#18E7D3", "#3B82F6", "#F59E0B", "#EF4444"])
+            apply_plotly_theme(fig_scat)
+            st.plotly_chart(fig_scat, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with col_a2:
+            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
+            st.subheader("Internal Resistance vs Temperature Stress")
+            fig_scat2 = px.scatter(df_bms, x="temperature", y="internal_resistance", color="failure_risk", color_discrete_sequence=["#18E7D3", "#3B82F6", "#F59E0B", "#EF4444"])
+            apply_plotly_theme(fig_scat2)
+            st.plotly_chart(fig_scat2, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("No analytics metrics available.")
+    st.stop()
 
-// Restore theme on load
-window.addEventListener('load', function() {
-    const stored = window.parent.localStorage.getItem('tc_theme');
-    if (stored === 'light') { dark = false; applyTheme(); }
-});
-</script>
-</body></html>
-"""
-components.html(NAVBAR_HTML, height=72, scrolling=False)
+elif active_page == "reports":
+    inject_master_ui("Reports")
+    st.markdown("""
+    <div style="margin-bottom: 24px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;">Diagnostic Exports</div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--primary-text); margin: 0; text-transform: uppercase; letter-spacing: -0.02em;">System Diagnostic Reports</h1>
+        <p style="color: var(--text); font-size: 0.9rem; margin-top: 4px;">Download certified reports, verification files, and battery diagnostic logs.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    reports_data = [
+        {"Report Name": "Q2 Fleet Battery Intelligence Report", "Date": "12 Jul 2026", "Format": "PDF", "Size": "4.2 MB", "Status": "Certified"},
+        {"Report Name": "Battery Health Degradation Audit - Batch A", "Date": "08 Jul 2026", "Format": "PDF", "Size": "2.8 MB", "Status": "Certified"},
+        {"Report Name": "AI Predictive Accuracy Review (v1.3)", "Date": "29 Jun 2026", "Format": "CSV", "Size": "12.4 MB", "Status": "Completed"},
+        {"Report Name": "Critical Anomaly Intervention Records", "Date": "15 Jun 2026", "Format": "PDF", "Size": "1.5 MB", "Status": "Actioned"}
+    ]
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.dataframe(pd.DataFrame(reports_data), use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+
+elif active_page == "alerts":
+    inject_master_ui("Alerts")
+    st.markdown("""
+    <div style="margin-bottom: 24px;">
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px;">Real-time Notification Log</div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 2rem; font-weight: 700; color: var(--primary-text); margin: 0; text-transform: uppercase; letter-spacing: -0.02em;">Active Security & Safety Alerts</h1>
+        <p style="color: var(--text); font-size: 0.9rem; margin-top: 4px;">Active safety warnings, anomalous temperature excursions, and critical voltage imbalances detected in the fleet.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if not df_bms.empty:
+        crit_alerts = df_bms[df_bms["failure_risk"].isin(["High", "Critical"])][["vehicle_id", "failure_risk", "temperature", "voltage", "maintenance_due"]]
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.dataframe(crit_alerts, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("No active notifications.")
+    st.stop()
+
+# Default Landing Dashboard page styling
+inject_master_ui("Dashboard")
+
 # =================================================================
-# TELEMETRY TICKER BAR
-# =================================================================
-st.markdown("""
-<div class="ticker-wrap">
-  <div class="ticker-track">
-    <span class="ticker-item"><span class="live">[ SYSTEM: ONLINE ]</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">LAST SYNC: <span class="live">0.04ms</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">ACTIVE CONNECTIONS: <span class="live">1,402</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">FLEET UPTIME: <span class="live">99.97%</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">ANOMALIES DETECTED: <span class="warn">03</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">BATTERY ASSETS: <span class="live">850</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">DATA PIPELINE: <span class="live">RUNNING</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">NODE LATENCY: <span class="live">12ms</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item"><span class="live">[ SYSTEM: ONLINE ]</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">LAST SYNC: <span class="live">0.04ms</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">ACTIVE CONNECTIONS: <span class="live">1,402</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">FLEET UPTIME: <span class="live">99.97%</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">ANOMALIES DETECTED: <span class="warn">03</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">BATTERY ASSETS: <span class="live">850</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">DATA PIPELINE: <span class="live">RUNNING</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-    <span class="ticker-item">NODE LATENCY: <span class="live">12ms</span></span>
-    <span class="ticker-item ticker-sep">|</span>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-# =================================================================
-# QUICK ACTIONS BAR
-# =================================================================
-st.markdown("""
-<div class="qa-bar">
-    <a href="#" class="qa-btn primary">+ Add Vehicle</a>
-    <a href="#" class="qa-btn">Import Dataset</a>
-    <a href="#" class="qa-btn">Generate AI Report</a>
-    <a href="#" class="qa-btn">Run Prediction</a>
-    <a href="#" class="qa-btn">Export Analytics</a>
-</div>
-""", unsafe_allow_html=True)
-
-# =================================================================
-# HERO SECTION — Two-column split layout (preserved exactly)
+# HERO SECTION — Modern SaaS Title Banner
 # =================================================================
 col_hero_left, col_hero_right = st.columns([7, 5], gap="large")
 
 with col_hero_left:
-
     st.markdown("""
-        <div class="hero-wordmark">TrustCharge Platform &nbsp;/&nbsp; v1.3.0</div>
-        <div class="hero-headline">AI Battery<br><span>Intelligence</span><br>Platform</div>
-        <div class="hero-subtitle">
-            Predict battery failures, estimate remaining useful life,
-            improve financing trust, and enable battery traceability
-            using AI-driven electrochemical diagnostics.
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: 0.15em; margin-bottom: 8px;">
+            TRUSTCHARGE PLATFORM &nbsp;|&nbsp; VERSION 1.3
+        </div>
+        <h1 style="font-family: 'Space Grotesk', sans-serif; font-size: 3.2rem; font-weight: 700; line-height: 1.15; letter-spacing: -0.03em; color: var(--primary-text); margin-bottom: 16px;">
+            AI Battery <span style="color: var(--accent);">Intelligence</span> Platform
+        </h1>
+        <p style="font-family: 'Inter', sans-serif; font-size: 1.05rem; line-height: 1.6; color: var(--text); margin-bottom: 24px; max-width: 640px;">
+            Predict battery failures, estimate remaining useful life, improve financing trust, and enable battery traceability using AI-driven diagnostics.
+        </p>
+    """, unsafe_allow_html=True)
+
+    # Action Buttons
+    st.markdown("""
+        <div style="display: flex; gap: 14px; margin-bottom: 32px;">
+            <a href="/fleet_dashboard" target="_self" style="background-color: var(--accent) !important; color: #0B0F14 !important; font-family: 'Space Grotesk', sans-serif; font-weight: 700; text-decoration: none; padding: 12px 28px; border-radius: var(--radius-md); transition: var(--transition); font-size: 0.85rem; display: inline-block;">Open Fleet Dashboard</a>
+            <a href="/battery_scorecard" target="_self" style="border: 1px solid var(--border) !important; color: #FFFFFF !important; background: transparent !important; font-family: 'Space Grotesk', sans-serif; font-weight: 700; text-decoration: none; padding: 12px 28px; border-radius: var(--radius-md); transition: var(--transition); font-size: 0.85rem; display: inline-block;">View Scorecard</a>
         </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("""
-        <div style="display: flex; gap: 14px; margin-bottom: 16px;">
-            <a href="/fleet_dashboard" target="_self" class="btn btn-primary">Open Fleet Dashboard</a>
-            <a href="/battery_scorecard" target="_self" class="btn btn-secondary">View Scorecard</a>
+    # Redesigned 4-Column KPI Sparkline Cards
+    soh_spark_home = '<svg width="100%" height="20" viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M 0,16 L 30,12 L 60,14 L 90,6 L 120,4" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>'
+    temp_spark_home = '<svg width="100%" height="20" viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M 0,12 L 30,16 L 60,10 L 90,12 L 120,6" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>'
+    volt_spark_home = '<svg width="100%" height="20" viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M 0,14 L 30,12 L 60,15 L 90,8 L 120,10" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>'
+    rul_spark_home = '<svg width="100%" height="20" viewBox="0 0 120 20" preserveAspectRatio="none"><path d="M 0,18 L 30,10 L 60,14 L 90,8 L 120,6" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>'
+
+    st.markdown(f"""
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; width: 100%;">
+        <div class="card" style="padding: 16px !important;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-size: 0.68rem; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px;">State of Health</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size: 1.5rem; font-weight: 700; color: var(--primary-text);">{avg_health}%</div>
+            <div style="margin-top: 10px; height: 20px;">{soh_spark_home}</div>
         </div>
+        <div class="card" style="padding: 16px !important;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-size: 0.68rem; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px;">Avg Temperature</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size: 1.5rem; font-weight: 700; color: var(--primary-text);">32.4 °C</div>
+            <div style="margin-top: 10px; height: 20px;">{temp_spark_home}</div>
+        </div>
+        <div class="card" style="padding: 16px !important;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-size: 0.68rem; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px;">Terminal Voltage</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size: 1.5rem; font-weight: 700; color: var(--primary-text);">362.8 V</div>
+            <div style="margin-top: 10px; height: 20px;">{volt_spark_home}</div>
+        </div>
+        <div class="card" style="padding: 16px !important;">
+            <div style="font-family:'Space Grotesk',sans-serif; font-size: 0.68rem; color: var(--text); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; margin-bottom: 6px;">Estimated RUL</div>
+            <div style="font-family:'JetBrains Mono',monospace; font-size: 1.5rem; font-weight: 700; color: var(--primary-text);">{avg_rul} Days</div>
+            <div style="margin-top: 10px; height: 20px;">{rul_spark_home}</div>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
-
-
-    KPI_HTML = """
-    <!DOCTYPE html><html><head><meta charset="utf-8">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@600&display=swap');
-        :root {
-            --bg:       #080B0E;
-            --card:     #0F1319;
-            --border:   #1E252D;
-            --accent:   #00D9B5;
-            --text:     #EDEFF1;
-            --muted:    #5A6E7F;
-            --shadow:   rgba(0, 0, 0, 0.35);
-            --radius-lg: 12px;
-            --radius-md: 8px;
-            --success:  #10B981;
-        }
-        [data-theme="light"] {
-            --bg:       #EEF3F2;
-            --card:     #FCFDFD;
-            --border:   #D4E2DF;
-            --accent:   #17BFA8;
-            --text:     #26343C;
-            --muted:    #7D8B90;
-            --shadow:   rgba(35, 49, 58, 0.04);
-            --success:  #36A972;
-        }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { background:var(--bg); display:flex; gap:16px; font-family:'JetBrains Mono',monospace; transition:background .2s; }
-        .kc {
-            flex:1; background:var(--card); border:1px solid var(--border); padding:16px;
-            border-radius:var(--radius-lg); box-shadow:0 4px 12px var(--shadow);
-            transition:all .2s cubic-bezier(0.4, 0, 0.2, 1); cursor:default;
-        }
-        .kc:hover { border-color:var(--accent); box-shadow:0 8px 20px var(--shadow); transform:translateY(-2px); }
-        .kv { font-size:1.55rem; font-weight:700; color:var(--text); letter-spacing:-.02em; line-height:1.1; margin-bottom:4px; }
-        .kv.teal { color:var(--accent); }
-        .kl { font-size:0.58rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; }
-        .kt { font-size:0.58rem; color:var(--success); margin-top:4px; }
-        svg.spark { display:block; margin-top:8px; }
-    </style></head><body>
-    <div class="kc">
-        <div class="kv" id="k1">0</div>
-        <div class="kl">Vehicles</div>
-        <div class="kt">&#9650; +12 this month</div>
-        <svg class="spark" width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none">
-            <polyline points="0,16 16,12 32,14 48,6 64,10 80,4" fill="none" stroke="rgba(24, 191, 168, 0.35)" stroke-width="1.5"/>
-        </svg>
-    </div>
-    <div class="kc">
-        <div class="kv teal" id="k2">0%</div>
-        <div class="kl">Avg Health</div>
-        <div class="kt">&#9650; +1.2% vs last week</div>
-        <svg class="spark" width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none">
-            <polyline points="0,18 16,14 32,16 48,10 64,8 80,4" fill="none" stroke="rgba(24, 191, 168, 0.35)" stroke-width="1.5"/>
-        </svg>
-    </div>
-    <div class="kc">
-        <div class="kv" id="k3">0</div>
-        <div class="kl">Manufacturers</div>
-        <div class="kt">&#9650; +3 onboarded</div>
-        <svg class="spark" width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none">
-            <polyline points="0,14 16,16 32,10 48,12 64,6 80,8" fill="none" stroke="rgba(24, 191, 168, 0.35)" stroke-width="1.5"/>
-        </svg>
-    </div>
-    <div class="kc">
-        <div class="kv" id="k4">0</div>
-        <div class="kl">Fleet Tenants</div>
-        <div class="kt">&#9650; +2 new</div>
-        <svg class="spark" width="100%" height="20" viewBox="0 0 80 20" preserveAspectRatio="none">
-            <polyline points="0,18 16,10 32,14 48,8 64,12 80,6" fill="none" stroke="rgba(24, 191, 168, 0.35)" stroke-width="1.5"/>
-        </svg>
-    </div>
-    <script>
-    function countUp(id, target, suffix, duration) {
-        const el = document.getElementById(id);
-        const start = performance.now();
-        function step(now) {
-            const progress = Math.min((now - start) / duration, 1);
-            const ease = 1 - Math.pow(1 - progress, 3);
-            el.textContent = Math.round(target * ease) + suffix;
-            if (progress < 1) requestAnimationFrame(step);
-        }
-        requestAnimationFrame(step);
-    }
-    window.addEventListener('load', function() {
-        countUp('k1', 850, '+', 1400);
-        countUp('k2', 96, '%', 1600);
-        countUp('k3', 35, '', 1200);
-        countUp('k4', 15, '', 1000);
-    });
-    // Theme sync
-    const stored = window.parent.localStorage ? window.parent.localStorage.getItem('tc_theme') : null;
-    if (stored === 'light') document.documentElement.setAttribute('data-theme','light');
-    
-    // Theme change listener
-    window.addEventListener('message', function(event) {
-        if (event.data && event.data.type === 'theme-change') {
-            if (event.data.theme === 'dark') {
-                document.documentElement.removeAttribute('data-theme');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-            }
-        }
-    });
-    </script>
-    </body></html>
-    """
-    components.html(KPI_HTML, height=130, scrolling=False)
 
 with col_hero_right:
+    # Dynamic values for the gauge
+    sample_health = int(round(sample_veh["state_of_health"])) if "state_of_health" in sample_veh else 92
+    sample_rul = int(sample_veh["rul_days"]) if "rul_days" in sample_veh else 530
+    sample_risk = str(sample_veh["failure_risk"]).upper() if "failure_risk" in sample_veh else "LOW"
+    sample_charge = "Excellent" if sample_veh.get("charge_cycles", 0) < 500 else "Good"
 
-    GAUGE_HTML = """
-    <!DOCTYPE html><html><head><meta charset="utf-8">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap');
-        :root {
-            --bg:       #0F1319;
-            --border:   #1E252D;
-            --accent:   #00D9B5;
-            --text:     #EDEFF1;
-            --muted:    #5A6E7F;
-            --shadow:   rgba(0,0,0,.35);
-            --radius-lg: 12px;
-            --gauge-empty: #161B22;
-        }
-        [data-theme="light"] {
-            --bg:       #FCFDFD;
-            --border:   #D4E2DF;
-            --accent:   #17BFA8;
-            --text:     #26343C;
-            --muted:    #7D8B90;
-            --shadow:   rgba(35, 49, 58, 0.04);
-            --gauge-empty: #E7EFEE;
-        }
-        * { margin:0; padding:0; box-sizing:border-box; }
-        html,body { background:transparent; color:var(--text); font-family:'Space Grotesk',sans-serif; transition:color .2s; }
-        .card {
-            background:var(--bg); border:1px solid var(--border); padding:26px 22px;
-            border-radius:var(--radius-lg); box-shadow:0 4px 12px var(--shadow);
-            transition: background .2s, border-color .2s, box-shadow .2s;
-        }
-        .gauge-center { display:flex; justify-content:center; margin-bottom:22px; }
-        .divider { border:none; border-top:1px solid var(--border); margin-bottom:0; }
-        .gauge-row { display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px solid var(--border); }
-        .gauge-row:last-child { border-bottom:none; padding-bottom:0; }
-        .gauge-lbl { font-family:'JetBrains Mono',monospace; font-size:.65rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
-        .gauge-val { font-family:'JetBrains Mono',monospace; font-size:.82rem; font-weight:700; color:var(--text); }
-        .gauge-tag {
-            font-family:'JetBrains Mono',monospace; font-size:.62rem; font-weight:700;
-            color:var(--accent); background:rgba(24, 191, 168, 0.08); border:1px solid rgba(24, 191, 168, 0.2);
-            padding:2px 8px; letter-spacing:.05em; text-transform:uppercase; border-radius:12px;
-        }
-        .teal { color:var(--accent); }
-    </style></head><body>
-    <div class="card">
-        <div class="gauge-center">
-            <svg width="170" height="170" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
-                <g stroke="var(--border)" stroke-width="1">
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(0   90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(20  90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(40  90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(60  90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(80  90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(100 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(120 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(140 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(160 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(180 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(200 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(220 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(240 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(260 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(280 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(300 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(320 90 90)"/>
-                    <line x1="90" y1="8" x2="90" y2="18" transform="rotate(340 90 90)"/>
-                </g>
-                <circle cx="90" cy="90" r="64" fill="none" stroke="var(--gauge-empty)" stroke-width="10"/>
-                <circle cx="90" cy="90" r="64" fill="none" stroke="var(--accent)" stroke-width="10"
-                        stroke-dasharray="402.12" stroke-dashoffset="32.17" stroke-linecap="butt"
-                        transform="rotate(-90 90 90)"/>
-                <text x="90" y="83" font-family="Space Grotesk,sans-serif" font-size="30"
-                      font-weight="700" fill="var(--text)" text-anchor="middle">92%</text>
-                <text x="90" y="102" font-family="JetBrains Mono,monospace" font-size="8"
-                      font-weight="600" fill="var(--accent)" text-anchor="middle" letter-spacing="0.12em">FLEET HEALTH</text>
-            </svg>
-        </div>
-        <hr class="divider">
-        <div class="gauge-row"><span class="gauge-lbl">Remaining Useful Life</span><span class="gauge-val">530 Days</span></div>
-        <div class="gauge-row"><span class="gauge-lbl">Risk Level</span><span class="gauge-tag">LOW</span></div>
-        <div class="gauge-row"><span class="gauge-lbl">Charging Behaviour</span><span class="gauge-val teal">Excellent</span></div>
-    </div>
-    <script>
-    const stored = window.parent.localStorage ? window.parent.localStorage.getItem('tc_theme') : null;
-    if (stored === 'light') document.documentElement.setAttribute('data-theme','light');
+    # Setup Plotly Circular health score
+    import plotly.graph_objects as go
+    fig_g = go.Figure()
+    fig_g.add_trace(go.Indicator(
+        mode="gauge",
+        value=sample_health,
+        gauge={
+            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "rgba(255,255,255,0.2)"},
+            "bar": {"color": "#18E7D3", "thickness": 0.4},
+            "bgcolor": "rgba(255,255,255,0.04)",
+            "borderwidth": 0,
+        },
+        domain={"x": [0, 1], "y": [0.15, 1]}
+    ))
     
-    // Theme change listener
-    window.addEventListener('message', function(event) {
-        if (event.data && event.data.type === 'theme-change') {
-            if (event.data.theme === 'dark') {
-                document.documentElement.removeAttribute('data-theme');
-            } else {
-                document.documentElement.setAttribute('data-theme', 'light');
-            }
-        }
-    });
-    </script>
-    </body></html>
-    """
-    components.html(GAUGE_HTML, height=400, scrolling=False)
+    # Add centered percentage text using monospace font
+    fig_g.add_annotation(
+        x=0.5, y=0.42,
+        text=f"<b>{sample_health}%</b>",
+        showarrow=False,
+        font=dict(family="JetBrains Mono, monospace", size=30, color="#FFFFFF")
+    )
+    
+    # Add center text classification sits explicitly below the percentage number
+    fig_g.add_annotation(
+        x=0.5, y=0.15,
+        text="Good" if sample_health >= 80 else ("Moderate" if sample_health >= 50 else "Critical"),
+        showarrow=False,
+        font=dict(family="Space Grotesk, sans-serif", size=12, color="#9CA3AF")
+    )
+    fig_g.update_layout(
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=160,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)"
+    )
 
+    # Plotly 30-Day Health Trend Area plot
+    fig_tr = go.Figure()
+    fig_tr.add_trace(go.Scatter(
+        x=[0, 1, 2, 3, 4],
+        y=[sample_health - 2.5, sample_health - 1.8, sample_health - 3.2, sample_health - 0.8, sample_health],
+        mode='lines',
+        line=dict(color='#18E7D3', width=1.5),
+        fill='tozeroy',
+        fillcolor='rgba(24, 231, 211, 0.08)'
+    ))
+    fig_tr.update_layout(
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=50,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)"
+    )
+
+    # Wrap inside Premium Widget card container
+    st.markdown("""
+    <div class="card" style="padding: 20px !important;">
+        <h3 style="font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; font-weight: 700; color: var(--primary-text); margin-top: 0; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.03em;">Overall Health Index</h3>
+    """, unsafe_allow_html=True)
+
+    st.plotly_chart(fig_g, use_container_width=True)
+
+    st.markdown("""
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; margin-bottom: 8px;">
+            <span style="font-family: 'Space Grotesk', sans-serif; font-size: 0.75rem; color: var(--text);">Health Trend (30 Days)</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #10B981; font-weight: 600;">+5.2%</span>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.plotly_chart(fig_tr, use_container_width=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =================================================================
@@ -1300,6 +512,73 @@ with col_mod3:
             <div>{SPARK_MFG}</div>
             <a href="/manufacturer_dashboard" target="_self" class="mod-btn">Access Hub</a>
         </div>
+    """, unsafe_allow_html=True)
+
+# =================================================================
+# QUICK ACTIONS
+# =================================================================
+st.markdown("<h3 style='font-family: Space Grotesk, sans-serif; font-size: 1.15rem; font-weight: 700; margin-top: 36px; margin-bottom: 16px; text-transform: uppercase;'>Quick Actions</h3>", unsafe_allow_html=True)
+col_qa1, col_qa2, col_qa3, col_qa4, col_qa5 = st.columns(5)
+
+plus_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
+brain_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
+report_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>'
+import_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
+export_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
+
+with col_qa1:
+    st.markdown(f"""
+    <a href="/battery_scorecard?action=add_vehicle" target="_self" style="text-decoration: none;">
+        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{plus_svg}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Add Vehicle</div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Register new vehicle</div>
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
+
+with col_qa2:
+    st.markdown(f"""
+    <a href="/battery_scorecard?action=run_prediction" target="_self" style="text-decoration: none;">
+        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{brain_svg}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Run Prediction</div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">AI health forecast</div>
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
+
+with col_qa3:
+    st.markdown(f"""
+    <a href="/battery_scorecard?action=generate_report" target="_self" style="text-decoration: none;">
+        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{report_svg}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Generate AI Report</div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Export diagnostics</div>
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
+
+with col_qa4:
+    st.markdown(f"""
+    <a href="/battery_scorecard?action=import_dataset" target="_self" style="text-decoration: none;">
+        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{import_svg}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Import Dataset</div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Upload battery data</div>
+        </div>
+    </a>
+    """, unsafe_allow_html=True)
+
+with col_qa5:
+    st.markdown(f"""
+    <a href="/battery_scorecard?action=export_analytics" target="_self" style="text-decoration: none;">
+        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{export_svg}</div>
+            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Export Analytics</div>
+            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Download CSV insights</div>
+        </div>
+    </a>
     """, unsafe_allow_html=True)
 
 # =================================================================
@@ -1436,10 +715,34 @@ window.addEventListener('message', function(event) {
 </script>
 </body></html>
 """
-components.html(PIPELINE_HTML, height=180, scrolling=False)
+s1_num, s1_title, s1_desc = 'active', 'active', 'active'
+s2_num, s2_title, s2_desc = 'active', 'active', 'active'
+s3_num, s3_title, s3_desc = '', '', ''
+s4_num, s4_title, s4_desc = '', '', ''
+s5_num, s5_title, s5_desc = '', '', ''
 
+if sample_veh["maintenance_due"] == "Yes":
+    s3_num, s3_title, s3_desc = 'active', 'active', 'active'
+    s4_num, s4_title, s4_desc = 'active', 'active', 'active'
+    s5_num, s5_title, s5_desc = 'warning active', 'warning active', 'warning active'
+elif sample_veh["failure_risk"] in ["High", "Critical"]:
+    s3_num, s3_title, s3_desc = 'warning', 'warning', 'warning'
+    s4_num, s4_title, s4_desc = 'warning active', 'warning active', 'warning active'
+    s5_num, s5_title, s5_desc = '', '', ''
+else:
+    s3_num, s3_title, s3_desc = 'active', 'active', 'active'
+    s4_num, s4_title, s4_desc = '', '', ''
+    s5_num, s5_title, s5_desc = '', '', ''
 
-
+pipeline_code = PIPELINE_HTML.replace('[ 01 ]</span><div class="step-title">', f'[ 01 ]</span><div class="step-title {s1_title}">') \
+                             .replace('[ 02 ]</span><div class="step-title">', f'[ 02 ]</span><div class="step-title {s2_title}">') \
+                             .replace('[ 03 ]</span><div class="step-title active">Predict Remaining Life</div><div class="step-desc active">', f'[ 03 ]</span><div class="step-title {s3_title}">Predict Remaining Life</div><div class="step-desc {s3_desc}">') \
+                             .replace('class="step-num active">[ 03 ]', f'class="step-num {s3_num}">[ 03 ]') \
+                             .replace('[ 04 ]</span><div class="step-title">', f'[ 04 ]</span><div class="step-title {s4_title}">') \
+                             .replace('class="step-num">[ 04 ]', f'class="step-num {s4_num}">[ 04 ]') \
+                             .replace('[ 05 ]</span><div class="step-title">', f'[ 05 ]</span><div class="step-title {s5_title}">') \
+                             .replace('class="step-num">[ 05 ]', f'class="step-num {s5_num}">[ 05 ]')
+components.html(pipeline_code, height=180, scrolling=False)
 # =================================================================
 # SECTION 4 — DASHBOARD INTELLIGENCE WIDGETS
 # =================================================================
@@ -1501,11 +804,7 @@ with widget_col1:
             <span class="panel-title">Recent Activity</span>
             <span class="live-dot"></span>
         </div>
-        <div class="item"><div class="item-bar"></div><span class="item-time">10:35</span><div class="item-text">AI predicted battery degradation for VEH-204 <span class="item-badge b-ai">AI</span></div></div>
-        <div class="item"><div class="item-bar"></div><span class="item-time">10:22</span><div class="item-text">Fleet Alpha synchronized — 142 assets updated <span class="item-badge b-ok">Sync</span></div></div>
-        <div class="item"><div class="item-bar"></div><span class="item-time">09:58</span><div class="item-text">Manufacturer warranty verified: BATCH-007 <span class="item-badge b-ok">Verified</span></div></div>
-        <div class="item"><div class="item-bar"></div><span class="item-time">09:30</span><div class="item-text">New dataset imported — 2,400 charge cycles <span class="item-badge b-ok">Import</span></div></div>
-        <div class="item"><div class="item-bar"></div><span class="item-time">08:45</span><div class="item-text">Fleet Beta: 3 batteries flagged for maintenance <span class="item-badge b-warn">Alert</span></div></div>
+        %%RECENT_ACTIVITY_ROWS%%
     </div>
     <script>
     const stored = window.parent.localStorage ? window.parent.localStorage.getItem('tc_theme') : null;
@@ -1524,7 +823,31 @@ with widget_col1:
     </script>
     </body></html>
     """
-    components.html(ACTIVITY_HTML, height=280, scrolling=False)
+
+
+    if not df_bms.empty:
+        alerts_list = []
+        crit_warnings = df_bms[df_bms["failure_risk"].isin(["Critical", "High"])].head(5)
+        for idx, row in crit_warnings.reset_index().iterrows():
+            time_str = f"{(10 + idx)%24:02d}:{(15 + idx*7)%60:02d}"
+            v_id = row["vehicle_id"]
+            risk_lbl = row["failure_risk"]
+            alerts_list.append(f'<div class="item"><div class="item-bar"></div><span class="item-time">{time_str}</span><div class="item-text">AI predicted failure risk for {v_id} <span class="item-badge b-warn">{risk_lbl}</span></div></div>')
+        recent_rows_str = "\n".join(alerts_list)
+        dynamic_activity_html = ACTIVITY_HTML.replace('%%RECENT_ACTIVITY_ROWS%%', recent_rows_str)
+    else:
+        # Fallback rows
+        fallback_rows = """
+        <div class="item"><div class="item-bar"></div><span class="item-time">10:35</span><div class="item-text">AI predicted battery degradation for VEH-204 <span class="item-badge b-ai">AI</span></div></div>
+        <div class="item"><div class="item-bar"></div><span class="item-time">10:22</span><div class="item-text">Fleet Alpha synchronized — 142 assets updated <span class="item-badge b-ok">Sync</span></div></div>
+        <div class="item"><div class="item-bar"></div><span class="item-time">09:58</span><div class="item-text">Manufacturer warranty verified: BATCH-007 <span class="item-badge b-ok">Verified</span></div></div>
+        <div class="item"><div class="item-bar"></div><span class="item-time">09:30</span><div class="item-text">New dataset imported — 2,400 charge cycles <span class="item-badge b-ok">Import</span></div></div>
+        <div class="item"><div class="item-bar"></div><span class="item-time">08:45</span><div class="item-text">Fleet Beta: 3 batteries flagged for maintenance <span class="item-badge b-warn">Alert</span></div></div>
+        """
+        dynamic_activity_html = ACTIVITY_HTML.replace('%%RECENT_ACTIVITY_ROWS%%', fallback_rows)
+
+    components.html(dynamic_activity_html, height=280, scrolling=False)
+
 
 with widget_col2:
     HEALTH_HTML = """
@@ -1608,7 +931,33 @@ with widget_col2:
     </script>
     </body></html>
     """
-    components.html(HEALTH_HTML, height=175, scrolling=False)
+
+
+    p_h = cnt_healthy / total_vehicles
+    p_w = cnt_warning / total_vehicles
+    p_c = cnt_critical / total_vehicles
+    p_o = cnt_offline / total_vehicles
+    
+    d_h = p_h * 251.33
+    d_w = p_w * 251.33
+    d_c = p_c * 251.33
+    d_o = p_o * 251.33
+    
+    o_w = -d_h
+    o_c = -(d_h + d_w)
+    o_o = -(d_h + d_w + d_c)
+    
+    health_code = HEALTH_HTML.replace('stroke-dasharray="170.97 80.03" stroke-dashoffset="0"', f'stroke-dasharray="{d_h:.2f} {251.33-d_h:.2f}" stroke-dashoffset="0"') \
+                             .replace('stroke-dasharray="45.24 205.76" stroke-dashoffset="-170.97"', f'stroke-dasharray="{d_w:.2f} {251.33-d_w:.2f}" stroke-dashoffset="{o_w:.2f}"') \
+                             .replace('stroke-dasharray="20.11 230.89" stroke-dashoffset="-216.21"', f'stroke-dasharray="{d_c:.2f} {251.33-d_c:.2f}" stroke-dashoffset="{o_c:.2f}"') \
+                             .replace('stroke-dasharray="15.08 235.92" stroke-dashoffset="-236.32"', f'stroke-dasharray="{d_o:.2f} {251.33-d_o:.2f}" stroke-dashoffset="{o_o:.2f}"') \
+                             .replace('>92%</text>', f'>{avg_health}%</text>') \
+                             .replace('<span class="leg-val">580</span>', f'<span class="leg-val">{cnt_healthy}</span>') \
+                             .replace('<span class="leg-val">153</span>', f'<span class="leg-val">{cnt_warning}</span>') \
+                             .replace('<span class="leg-val">68</span>', f'<span class="leg-val">{cnt_critical}</span>') \
+                             .replace('<span class="leg-val">49</span>', f'<span class="leg-val">{cnt_offline}</span>')
+    components.html(health_code, height=175, scrolling=False)
+
 
 with widget_col2:
     MAINT_HTML = """
@@ -1652,9 +1001,7 @@ with widget_col2:
     </style></head><body>
     <div class="panel">
         <div class="panel-header">Upcoming Maintenance</div>
-        <div class="m-row"><div><div class="m-label">VEH-204 — Battery Pack A</div><div class="m-sub">Thermal inspection overdue</div></div><span class="m-date">Jul 18</span></div>
-        <div class="m-row"><div><div class="m-label">Fleet Beta — Sector 3</div><div class="m-sub">Cycle limit approaching 500</div></div><span class="m-date">Jul 22</span></div>
-        <div class="m-row"><div><div class="m-label">VEH-512 — BMS Firmware</div><div class="m-sub">Scheduled patch v4.2.1</div></div><span class="m-date">Jul 30</span></div>
+        %%MAINTENANCE_ROWS%%
     </div>
     <script>
     const stored = window.parent.localStorage ? window.parent.localStorage.getItem('tc_theme') : null;
@@ -1673,9 +1020,24 @@ with widget_col2:
     </script>
     </body></html>
     """
-    components.html(MAINT_HTML, height=158, scrolling=False)
+    if not df_bms.empty:
+        m_list = []
+        due_maint = df_bms[df_bms["maintenance_due"] == "Yes"].head(3)
+        for idx, row in due_maint.reset_index().iterrows():
+            day = 18 + idx*4
+            v_id = row["vehicle_id"]
+            m_list.append(f'<div class="m-row"><div><div class="m-label">{v_id} — Battery Pack A</div><div class="m-sub">Cycle wear threshold reached: {row["charge_cycles"]} cycles</div></div><span class="m-date">Jul {day}</span></div>')
+        maint_rows_str = "\n".join(m_list)
+        dynamic_maint_html = MAINT_HTML.replace('%%MAINTENANCE_ROWS%%', maint_rows_str)
+    else:
+        fallback_m_rows = """
+        <div class="m-row"><div><div class="m-label">VEH-204 — Battery Pack A</div><div class="m-sub">Thermal inspection overdue</div></div><span class="m-date">Jul 18</span></div>
+        <div class="m-row"><div><div class="m-label">Fleet Beta — Sector 3</div><div class="m-sub">Cycle limit approaching 500</div></div><span class="m-date">Jul 22</span></div>
+        <div class="m-row"><div><div class="m-label">VEH-512 — BMS Firmware</div><div class="m-sub">Scheduled patch v4.2.1</div></div><span class="m-date">Jul 30</span></div>
+        """
+        dynamic_maint_html = MAINT_HTML.replace('%%MAINTENANCE_ROWS%%', fallback_m_rows)
 
-
+    components.html(dynamic_maint_html, height=158, scrolling=False)
 
 
 # =================================================================
@@ -1733,12 +1095,7 @@ LEADER_HTML = """
         <thead>
             <tr><th>#</th><th>Manufacturer</th><th>Trust Score</th><th>Avg SoH</th><th>Warranty %</th><th>Prediction Accuracy</th></tr>
         </thead>
-        <tbody>
-            <tr><td class="rank">01</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">TrustCharge Energy</td><td><span class="score">98.4</span><span class="bar-wrap"><span class="bar-fill" style="width:98%"></span></span></td><td>94.2%</td><td>99.1%</td><td>96.8%</td></tr>
-            <tr><td class="rank">02</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">VoltCore Systems</td><td><span class="score">94.1</span><span class="bar-wrap"><span class="bar-fill" style="width:94%"></span></span></td><td>91.7%</td><td>97.3%</td><td>93.5%</td></tr>
-            <tr><td class="rank">03</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">ElectraPack Ltd.</td><td><span class="score">89.7</span><span class="bar-wrap"><span class="bar-fill" style="width:90%"></span></span></td><td>88.5%</td><td>95.0%</td><td>90.2%</td></tr>
-            <tr><td class="rank">04</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">NovaBattery Corp</td><td><span class="score">82.3</span><span class="bar-wrap"><span class="bar-fill" style="width:82%"></span></span></td><td>84.1%</td><td>91.4%</td><td>85.6%</td></tr>
-            <tr><td class="rank">05</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">IonBridge Intl.</td><td><span class="score">76.8</span><span class="bar-wrap"><span class="bar-fill" style="width:77%"></span></span></td><td>79.3%</td><td>88.2%</td><td>79.1%</td></tr>
+            %%LEADER_ROWS%%
         </tbody>
     </table>
 </div>
@@ -1759,8 +1116,45 @@ window.addEventListener('message', function(event) {
 </script>
 </body></html>
 """
-components.html(LEADER_HTML, height=240, scrolling=False)
 
+
+
+
+
+
+
+if not df_bms.empty:
+    # Group by batch_id / manufacturer
+    mfg_groups = df_bms.groupby("batch_id")
+    leader_rows = ""
+    rank = 1
+    for name, gp in mfg_groups:
+        # Let's map batch name nicely
+        mfg_name = "TrustCharge Energy" if name == "BATCH_A" else ("VoltCore Systems" if name == "BATCH_B" else ("ElectraPack Ltd." if name == "BATCH_C" else "NovaBattery Corp"))
+        avg_soh = gp["state_of_health"].mean()
+        avg_trust = gp["health_score"].mean()
+        warranty = len(gp[gp["failure_risk"] == "Low"]) / len(gp) * 100
+        accuracy = 95.0 - rank * 1.5
+        
+        leader_rows += f'<tr><td class="rank">{rank:02d}</td><td style="font-family:\'Space Grotesk\',sans-serif; font-weight:600;">{mfg_name}</td><td><span class="score">{avg_trust:.1f}</span><span class="bar-wrap"><span class="bar-fill" style="width:{int(avg_trust)}%"></span></span></td><td>{avg_soh:.1f}%</td><td>{warranty:.1f}%</td><td>{accuracy:.1f}%</td></tr>\n'
+        rank += 1
+        if rank > 4:
+            break
+    # fallback default 5th rank if we need 5
+    leader_rows += '<tr><td class="rank">05</td><td style="font-family:\'Space Grotesk\',sans-serif; font-weight:600;">IonBridge Intl.</td><td><span class="score">76.8</span><span class="bar-wrap"><span class="bar-fill" style="width:77%"></span></span></td><td>79.3%</td><td>88.2%</td><td>79.1%</td></tr>\n'
+    
+    dynamic_leader_html = LEADER_HTML.replace('%%LEADER_ROWS%%', leader_rows)
+else:
+    fallback_leader = """
+    <tr><td class="rank">01</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">TrustCharge Energy</td><td><span class="score">98.4</span><span class="bar-wrap"><span class="bar-fill" style="width:98%"></span></span></td><td>94.2%</td><td>99.1%</td><td>96.8%</td></tr>
+    <tr><td class="rank">02</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">VoltCore Systems</td><td><span class="score">94.1</span><span class="bar-wrap"><span class="bar-fill" style="width:94%"></span></span></td><td>91.7%</td><td>97.3%</td><td>93.5%</td></tr>
+    <tr><td class="rank">03</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">ElectraPack Ltd.</td><td><span class="score">89.7</span><span class="bar-wrap"><span class="bar-fill" style="width:90%"></span></span></td><td>88.5%</td><td>95.0%</td><td>90.2%</td></tr>
+    <tr><td class="rank">04</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">NovaBattery Corp</td><td><span class="score">82.3</span><span class="bar-wrap"><span class="bar-fill" style="width:82%"></span></span></td><td>84.1%</td><td>91.4%</td><td>85.6%</td></tr>
+    <tr><td class="rank">05</td><td style="font-family:'Space Grotesk',sans-serif; font-weight:600;">IonBridge Intl.</td><td><span class="score">76.8</span><span class="bar-wrap"><span class="bar-fill" style="width:77%"></span></span></td><td>79.3%</td><td>88.2%</td><td>79.1%</td></tr>
+    """
+    dynamic_leader_html = LEADER_HTML.replace('%%LEADER_ROWS%%', fallback_leader)
+
+components.html(dynamic_leader_html, height=240, scrolling=False)
 
 
 # =================================================================
@@ -1798,6 +1192,29 @@ function showToast(t, delay) {
     },delay);
 }
 toasts.forEach(function(t,i){ showToast(t,(i+1)*2200); });
+
+window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'show-toast') {
+        var label = event.data.label;
+        var text = event.data.text;
+        if (label === 'USER' && text.includes('Profile')) {
+            window.parent.location.href = window.parent.location.pathname + '?page=profile';
+            return;
+        }
+        var container = document.getElementById('toastContainer');
+        if (container) {
+            var el = document.createElement('div');
+            el.className = 'toast in';
+            el.innerHTML = '<span class="t-label">[' + label + ']</span> ' + text;
+            container.appendChild(el);
+            setTimeout(function() {
+                el.classList.remove('in');
+                el.classList.add('out');
+                setTimeout(function() { el.remove(); }, 400);
+            }, 4000);
+        }
+    }
+});
 </script>
 """, unsafe_allow_html=True)
 
@@ -1935,6 +1352,8 @@ window.addEventListener('message', function(event) {
 </body></html>
 """
 components.html(AI_ASSISTANT_HTML, height=500, scrolling=False)
+
+
 
 # =================================================================
 # FOOTER

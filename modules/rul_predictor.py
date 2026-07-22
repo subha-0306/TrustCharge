@@ -4,6 +4,7 @@ import joblib
 from pathlib import Path
 
 try:
+    # pyrefly: ignore [missing-import]
     import shap
     SHAP_AVAILABLE = True
 except ImportError:

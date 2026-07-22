@@ -179,6 +179,7 @@ if __name__ == "__main__":
     ]
 
     for tc in test_cases:
+        # pyrefly: ignore [bad-unpacking]
         result = calculate_health_score(**tc["inputs"])
         print(f"\n{tc['label']}")
         print(f"  Battery Health Score : {result['health_score']}")

@@ -555,7 +555,29 @@ def inject_master_ui(active_page: str):
     """
     st.html(css_style)
     
-    # Render Left Sidebar
+    # Helper to generate theme-preserved links across all sidebar pages
+    def t_link(url: str) -> str:
+        if is_light:
+            return f"{url}&theme=light" if "?" in url else f"{url}?theme=light"
+        return url
+
+    # Helper to generate theme toggle URLs preserving current page context
+    def toggle_url(target_theme: str) -> str:
+        if active_page == "Battery Scorecard":
+            return f"/battery_scorecard?theme={target_theme}"
+        elif active_page == "Fleet Overview":
+            return f"/fleet_dashboard?theme={target_theme}"
+        elif active_page == "Manufacturers":
+            return f"/manufacturer_dashboard?theme={target_theme}"
+        elif active_page == "Dashboard":
+            return f"/?theme={target_theme}"
+        else:
+            page_slug = active_page.lower().replace(" ", "")
+            if active_page == "AI Predictions":
+                page_slug = "predictions"
+            return f"/?page={page_slug}&theme={target_theme}"
+
+    # Render Left Sidebar with Theme-Preserving Hrefs
     sidebar_html = f"""
     <div class="custom-sidebar">
         <div>
@@ -564,39 +586,39 @@ def inject_master_ui(active_page: str):
                 <span class="logo-text">TrustCharge</span>
             </div>
             <div class="sidebar-nav">
-                <a href="/" target="_self" class="nav-item {"active" if active_page == "Dashboard" else ""}">
+                <a href="{t_link('/')}" target="_self" class="nav-item {"active" if active_page == "Dashboard" else ""}">
                     {HOME_SVG}
                     Dashboard
                 </a>
-                <a href="/battery_scorecard" target="_self" class="nav-item {"active" if active_page == "Battery Scorecard" else ""}">
+                <a href="{t_link('/battery_scorecard')}" target="_self" class="nav-item {"active" if active_page == "Battery Scorecard" else ""}">
                     {HEART_SVG}
                     Battery Scorecard
                 </a>
-                <a href="/fleet_dashboard" target="_self" class="nav-item {"active" if active_page == "Fleet Overview" else ""}">
+                <a href="{t_link('/fleet_dashboard')}" target="_self" class="nav-item {"active" if active_page == "Fleet Overview" else ""}">
                     {GRID_SVG}
                     Fleet Overview
                 </a>
-                <a href="/manufacturer_dashboard" target="_self" class="nav-item {"active" if active_page == "Manufacturers" else ""}">
+                <a href="{t_link('/manufacturer_dashboard')}" target="_self" class="nav-item {"active" if active_page == "Manufacturers" else ""}">
                     {FACTORY_SVG}
                     Manufacturers
                 </a>
-                <a href="/?page=vehicles" target="_self" class="nav-item {"active" if active_page == "Vehicles" else ""}">
+                <a href="{t_link('/?page=vehicles')}" target="_self" class="nav-item {"active" if active_page == "Vehicles" else ""}">
                     {CAR_SVG}
                     Vehicles
                 </a>
-                <a href="/?page=predictions" target="_self" class="nav-item {"active" if active_page == "AI Predictions" else ""}">
+                <a href="{t_link('/?page=predictions')}" target="_self" class="nav-item {"active" if active_page == "AI Predictions" else ""}">
                     {BRAIN_SVG}
                     AI Predictions
                 </a>
-                <a href="/?page=analytics" target="_self" class="nav-item {"active" if active_page == "Analytics" else ""}">
+                <a href="{t_link('/?page=analytics')}" target="_self" class="nav-item {"active" if active_page == "Analytics" else ""}">
                     {BAR_SVG}
                     Analytics
                 </a>
-                <a href="/?page=reports" target="_self" class="nav-item {"active" if active_page == "Reports" else ""}">
+                <a href="{t_link('/?page=reports')}" target="_self" class="nav-item {"active" if active_page == "Reports" else ""}">
                     {REPORTS_SVG}
                     Reports
                 </a>
-                <a href="/?page=alerts" target="_self" class="nav-item {"active" if active_page == "Alerts" else ""}">
+                <a href="{t_link('/?page=alerts')}" target="_self" class="nav-item {"active" if active_page == "Alerts" else ""}">
                     {BELL_SVG}
                     Alerts
                 </a>
@@ -607,7 +629,7 @@ def inject_master_ui(active_page: str):
     st.markdown(clean_html(sidebar_html), unsafe_allow_html=True)
 
     # Render sidebar footer separately
-    footer_html = f"""<div class="sidebar-footer"><div class="user-block" style="display:flex;align-items:center;gap:8px;"><div class="user-avatar-circle" style="width:32px;height:32px;border-radius:50%;background:{avatar_bg};border:1px solid var(--border);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.8rem;flex-shrink:0;">SK</div><div class="user-info"><span class="user-name">Shruti K</span><span class="user-role">Administrator</span></div></div><div class="footer-actions" style="display:flex;gap:8px;margin-top:8px;"><a href="/?page=profile" target="_self" class="footer-btn" title="Settings">{GEAR_SVG}</a><a href="/?action=logout" target="_self" class="footer-btn" style="color:#EF4444;" title="Logout">{LOGOUT_SVG}</a></div></div>"""
+    footer_html = f"""<div class="sidebar-footer"><div class="user-block" style="display:flex;align-items:center;gap:8px;"><div class="user-avatar-circle" style="width:32px;height:32px;border-radius:50%;background:{avatar_bg};border:1px solid var(--border);color:var(--accent);display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.8rem;flex-shrink:0;">SK</div><div class="user-info"><span class="user-name">Shruti K</span><span class="user-role">Administrator</span></div></div><div class="footer-actions" style="display:flex;gap:8px;margin-top:8px;"><a href="{t_link('/?page=profile')}" target="_self" class="footer-btn" title="Settings">{GEAR_SVG}</a><a href="{t_link('/?action=logout')}" target="_self" class="footer-btn" style="color:#EF4444;" title="Logout">{LOGOUT_SVG}</a></div></div>"""
     st.markdown(footer_html, unsafe_allow_html=True)
     
     # Render Sticky Top Navbar
@@ -626,16 +648,16 @@ def inject_master_ui(active_page: str):
         </div>
         <div class="navbar-right">
             <div class="theme-toggle-group">
-                <a href="?theme=dark" target="_self" class="theme-pill {dark_active}" title="Switch to Dark Theme">
+                <a href="{toggle_url('dark')}" target="_self" class="theme-pill {dark_active}" title="Switch to Dark Theme">
                     {moon_icon}
                     <span>Dark</span>
                 </a>
-                <a href="?theme=light" target="_self" class="theme-pill {light_active}" title="Switch to Light Theme">
+                <a href="{toggle_url('light')}" target="_self" class="theme-pill {light_active}" title="Switch to Light Theme">
                     {sun_icon}
                     <span>Light</span>
                 </a>
             </div>
-            <a href="/?page=profile" target="_self" class="profile-link" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 10px;">
+            <a href="{t_link('/?page=profile')}" target="_self" class="profile-link" style="text-decoration: none; color: inherit; display: flex; align-items: center; gap: 10px;">
                 <div class="navbar-avatar">SK</div>
                 <span class="profile-name" style="font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 0.85rem; color: var(--primary-text);">Shruti K</span>
             </a>
@@ -668,6 +690,20 @@ def inject_master_ui(active_page: str):
     
     <script>
         (function() {{
+            const curTheme = "{current_theme}";
+            try {{
+                localStorage.setItem('tc_theme', curTheme);
+                if (window.parent && window.parent.localStorage) {{
+                    window.parent.localStorage.setItem('tc_theme', curTheme);
+                }}
+            }} catch(e) {{}}
+            
+            try {{
+                const msg = {{ type: 'theme-change', theme: curTheme }};
+                window.postMessage(msg, '*');
+                if (window.parent) window.parent.postMessage(msg, '*');
+            }} catch(e) {{}}
+
             function updateClock() {{
                 const now = new Date();
                 const clockEl = document.getElementById('status-clock');

@@ -446,12 +446,12 @@ ICON_MFG = """<svg width="28" height="28" viewBox="0 0 24 24" fill="none"
 
 st.markdown("""
 <style>
-.mod-card { background-color: #0B1220 !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; padding: 24px 20px !important; border-radius: 12px; }
+.mod-card { background-color: var(--card) !important; border: 1px solid var(--border) !important; padding: 24px 20px !important; border-radius: 12px; box-shadow: var(--shadow) !important; }
 .mod-corner { color: var(--muted); }
 .mod-id { color: var(--muted); }
-.mod-title-text { color: #FFFFFF !important; font-size: 1.35rem !important; font-weight: 800 !important; font-family: 'Space Grotesk', sans-serif !important; line-height: 1.3 !important; }
+.mod-title-text { color: var(--primary-text) !important; font-size: 1.35rem !important; font-weight: 800 !important; font-family: 'Space Grotesk', sans-serif !important; line-height: 1.3 !important; }
 .mod-desc-text { color: var(--muted); }
-.mod-btn { border-color: var(--border); color: var(--muted); background:transparent; box-shadow:2px 2px 0 var(--shadow); }
+.mod-btn { border-color: var(--border); color: var(--text); background:transparent; box-shadow:2px 2px 0 var(--shadow); }
 .mod-btn:hover { background:var(--accent); border-color:var(--accent); color:var(--bg); box-shadow:0 0 12px var(--glow); }
 </style>
 """, unsafe_allow_html=True)

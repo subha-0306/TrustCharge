@@ -210,40 +210,40 @@ else:
 
         st.markdown(f"""
         <h3 style="font-family: 'Space Grotesk', sans-serif; font-size: 0.95rem; font-weight: 700; color: var(--primary-text); margin-top: 24px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.03em;">Quick Actions</h3>
-        <div class="action-grid">
-            <a href="?action=add_vehicle" target="_self" class="action-card">
-                <div class="action-icon-wrap">{plus_action_svg}</div>
-                <div class="action-info">
-                    <span class="action-title">Add Vehicle</span>
-                    <span class="action-desc">Register new vehicle</span>
+        <div class="qa-grid">
+            <a href="?action=add_vehicle" target="_self" class="qa-card-link">
+                <div class="qa-card">
+                    <div class="qa-icon-box">{plus_action_svg}</div>
+                    <div class="qa-card-title">Add Vehicle</div>
+                    <div class="qa-card-desc">Register new vehicle</div>
                 </div>
             </a>
-            <a href="?action=run_prediction" target="_self" class="action-card">
-                <div class="action-icon-wrap">{pred_action_svg}</div>
-                <div class="action-info">
-                    <span class="action-title">Run Prediction</span>
-                    <span class="action-desc">AI health prediction</span>
+            <a href="?action=run_prediction" target="_self" class="qa-card-link">
+                <div class="qa-card">
+                    <div class="qa-icon-box">{pred_action_svg}</div>
+                    <div class="qa-card-title">Run Prediction</div>
+                    <div class="qa-card-desc">AI health prediction</div>
                 </div>
             </a>
-            <a href="?action=generate_report" target="_self" class="action-card">
-                <div class="action-icon-wrap">{report_action_svg}</div>
-                <div class="action-info">
-                    <span class="action-title">Generate Report</span>
-                    <span class="action-desc">Export detailed report</span>
+            <a href="?action=generate_report" target="_self" class="qa-card-link">
+                <div class="qa-card">
+                    <div class="qa-icon-box">{report_action_svg}</div>
+                    <div class="qa-card-title">Generate Report</div>
+                    <div class="qa-card-desc">Export detailed report</div>
                 </div>
             </a>
-            <a href="?action=import_dataset" target="_self" class="action-card">
-                <div class="action-icon-wrap">{import_action_svg}</div>
-                <div class="action-info">
-                    <span class="action-title">Import Dataset</span>
-                    <span class="action-desc">Upload battery data</span>
+            <a href="?action=import_dataset" target="_self" class="qa-card-link">
+                <div class="qa-card">
+                    <div class="qa-icon-box">{import_action_svg}</div>
+                    <div class="qa-card-title">Import Dataset</div>
+                    <div class="qa-card-desc">Upload battery data</div>
                 </div>
             </a>
-            <a href="?action=export_analytics" target="_self" class="action-card">
-                <div class="action-icon-wrap">{export_action_svg}</div>
-                <div class="action-info">
-                    <span class="action-title">Export Analytics</span>
-                    <span class="action-desc">Download insights</span>
+            <a href="?action=export_analytics" target="_self" class="qa-card-link">
+                <div class="qa-card">
+                    <div class="qa-icon-box">{export_action_svg}</div>
+                    <div class="qa-card-title">Export Analytics</div>
+                    <div class="qa-card-desc">Download insights</div>
                 </div>
             </a>
         </div>

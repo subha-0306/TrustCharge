@@ -166,21 +166,42 @@ elif active_page == "predictions":
         st.markdown('<div style="height:20px;"></div>', unsafe_allow_html=True)
         col_hist, col_high = st.columns([3, 2], gap="large")
         with col_hist:
-            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
             st.subheader("RUL Forecast Distribution Curve")
-            import plotly.express as px
+            import numpy as np
+            import plotly.graph_objects as go
             from utils.ui_components import apply_plotly_theme
-            fig_rul = px.histogram(df_bms, x="rul_days", nbins=20, color_discrete_sequence=["#18E7D3"], labels={"rul_days": "Remaining Useful Life (Days)"})
+
+            counts, bin_edges = np.histogram(df_bms["rul_days"].dropna(), bins=20)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+            fig_rul = go.Figure()
+            fig_rul.add_trace(go.Scatter(
+                x=bin_centers,
+                y=counts,
+                mode='lines+markers',
+                name='Asset Count',
+                line=dict(color='#18E7D3', width=3, shape='spline'),
+                marker=dict(
+                    size=9,
+                    color='#FF5722',
+                    line=dict(width=2, color='#FFFFFF'),
+                    symbol='circle'
+                ),
+                fill='tozeroy',
+                fillcolor='rgba(24, 231, 211, 0.08)'
+            ))
+            fig_rul.update_layout(
+                xaxis_title="Remaining Useful Life (Days)",
+                yaxis_title="Count (Number of Assets)",
+                margin=dict(l=20, r=20, t=30, b=30),
+            )
             apply_plotly_theme(fig_rul)
             st.plotly_chart(fig_rul, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
             
         with col_high:
-            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
             st.subheader("Critical Warning Log")
             crit_assets = df_bms[df_bms["failure_risk"].isin(["High", "Critical"])][["vehicle_id", "state_of_health", "failure_risk"]]
             st.dataframe(crit_assets, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No prediction telemetry active.")
     st.stop()
@@ -201,20 +222,16 @@ elif active_page == "analytics":
         
         col_a1, col_a2 = st.columns(2, gap="large")
         with col_a1:
-            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
             st.subheader("State of Health vs Charge Cycles Spread")
             fig_scat = px.scatter(df_bms, x="charge_cycles", y="state_of_health", color="failure_risk", color_discrete_sequence=["#18E7D3", "#3B82F6", "#F59E0B", "#EF4444"])
             apply_plotly_theme(fig_scat)
             st.plotly_chart(fig_scat, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
             
         with col_a2:
-            st.markdown('<div class="card" style="padding:20px;">', unsafe_allow_html=True)
             st.subheader("Internal Resistance vs Temperature Stress")
             fig_scat2 = px.scatter(df_bms, x="temperature", y="internal_resistance", color="failure_risk", color_discrete_sequence=["#18E7D3", "#3B82F6", "#F59E0B", "#EF4444"])
             apply_plotly_theme(fig_scat2)
             st.plotly_chart(fig_scat2, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No analytics metrics available.")
     st.stop()
@@ -235,9 +252,7 @@ elif active_page == "reports":
         {"Report Name": "AI Predictive Accuracy Review (v1.3)", "Date": "29 Jun 2026", "Format": "CSV", "Size": "12.4 MB", "Status": "Completed"},
         {"Report Name": "Critical Anomaly Intervention Records", "Date": "15 Jun 2026", "Format": "PDF", "Size": "1.5 MB", "Status": "Actioned"}
     ]
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.dataframe(pd.DataFrame(reports_data), use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 
 elif active_page == "alerts":
@@ -252,9 +267,7 @@ elif active_page == "alerts":
     
     if not df_bms.empty:
         crit_alerts = df_bms[df_bms["failure_risk"].isin(["High", "Critical"])][["vehicle_id", "failure_risk", "temperature", "voltage", "maintenance_due"]]
-        st.markdown('<div class="card">', unsafe_allow_html=True)
         st.dataframe(crit_alerts, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("No active notifications.")
     st.stop()
@@ -433,10 +446,10 @@ ICON_MFG = """<svg width="28" height="28" viewBox="0 0 24 24" fill="none"
 
 st.markdown("""
 <style>
-.mod-card { background-color: var(--card); border: 1px solid var(--border); }
+.mod-card { background-color: #0B1220 !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; padding: 24px 20px !important; border-radius: 12px; }
 .mod-corner { color: var(--muted); }
 .mod-id { color: var(--muted); }
-.mod-title-text { color: var(--text); }
+.mod-title-text { color: #FFFFFF !important; font-size: 1.35rem !important; font-weight: 800 !important; font-family: 'Space Grotesk', sans-serif !important; line-height: 1.3 !important; }
 .mod-desc-text { color: var(--muted); }
 .mod-btn { border-color: var(--border); color: var(--muted); background:transparent; box-shadow:2px 2px 0 var(--shadow); }
 .mod-btn:hover { background:var(--accent); border-color:var(--accent); color:var(--bg); box-shadow:0 0 12px var(--glow); }
@@ -464,9 +477,7 @@ SPARK_MFG = """<svg width="100%" height="28" viewBox="0 0 200 28" preserveAspect
 with col_mod1:
     st.markdown(f"""
         <div class="mod-card">
-            <span class="mod-corner">[+]</span>
             <div>
-                <div class="mod-id">MOD.01 / FLEET</div>
                 <div class="mod-title-row">
                     <span class="status-dot"></span>
                     <span class="mod-title-text">Fleet Dashboard</span>
@@ -478,12 +489,11 @@ with col_mod1:
             <a href="/fleet_dashboard" target="_self" class="mod-btn">Open Fleet Portal</a>
         </div>
     """, unsafe_allow_html=True)
+
 with col_mod2:
     st.markdown(f"""
         <div class="mod-card alt-bg">
-            <span class="mod-corner">[+]</span>
             <div>
-                <div class="mod-id">MOD.02 / SCORECARD</div>
                 <div class="mod-title-row">
                     <span class="status-dot"></span>
                     <span class="mod-title-text">Battery Scorecard</span>
@@ -499,9 +509,7 @@ with col_mod2:
 with col_mod3:
     st.markdown(f"""
         <div class="mod-card">
-            <span class="mod-corner">[+]</span>
             <div>
-                <div class="mod-id">MOD.03 / TRACE</div>
                 <div class="mod-title-row">
                     <span class="status-dot"></span>
                     <span class="mod-title-text">Manufacturer Traceability</span>
@@ -517,69 +525,117 @@ with col_mod3:
 # =================================================================
 # QUICK ACTIONS
 # =================================================================
-st.markdown("<h3 style='font-family: Space Grotesk, sans-serif; font-size: 1.15rem; font-weight: 700; margin-top: 36px; margin-bottom: 16px; text-transform: uppercase;'>Quick Actions</h3>", unsafe_allow_html=True)
-col_qa1, col_qa2, col_qa3, col_qa4, col_qa5 = st.columns(5)
-
 plus_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>'
 brain_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>'
 report_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>'
 import_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
 export_svg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#18E7D3" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>'
 
-with col_qa1:
-    st.markdown(f"""
-    <a href="/battery_scorecard?action=add_vehicle" target="_self" style="text-decoration: none;">
-        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{plus_svg}</div>
-            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Add Vehicle</div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Register new vehicle</div>
-        </div>
-    </a>
-    """, unsafe_allow_html=True)
+st.markdown("""
+<style>
+div[data-testid="stMarkdownContainer"] {
+    overflow: visible !important;
+}
+.qa-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+    margin-bottom: 28px;
+    width: 100%;
+    overflow: visible !important;
+}
+.qa-card-link {
+    text-decoration: none !important;
+    display: block;
+    width: 100%;
+    outline: none !important;
+}
+.qa-card {
+    background-color: var(--card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-lg);
+    padding: 20px 12px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    box-sizing: border-box;
+    transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.22s ease !important;
+}
+.qa-card-link:hover .qa-card,
+.qa-card:hover {
+    transform: translateY(-10px) scale(1.08) !important;
+    border-color: #18E7D3 !important;
+    background-color: #1A2942 !important;
+    box-shadow: 0 16px 36px rgba(24, 231, 211, 0.4), 0 0 20px rgba(24, 231, 211, 0.25) !important;
+    z-index: 100 !important;
+}
+.qa-card-link:hover .qa-icon-box,
+.qa-card:hover .qa-icon-box {
+    background: rgba(24, 231, 211, 0.25) !important;
+    transform: scale(1.25) !important;
+    box-shadow: 0 0 12px rgba(24, 231, 211, 0.4) !important;
+}
+.qa-card-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--primary-text);
+}
+.qa-card-desc {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.72rem;
+    color: var(--text);
+}
+</style>
+""", unsafe_allow_html=True)
 
-with col_qa2:
-    st.markdown(f"""
-    <a href="/battery_scorecard?action=run_prediction" target="_self" style="text-decoration: none;">
-        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{brain_svg}</div>
-            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Run Prediction</div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">AI health forecast</div>
-        </div>
-    </a>
-    """, unsafe_allow_html=True)
+st.markdown(f"""
+<h3 style='font-family: Space Grotesk, sans-serif; font-size: 1.15rem; font-weight: 700; margin-top: 36px; margin-bottom: 16px; text-transform: uppercase;'>Quick Actions</h3>
 
-with col_qa3:
-    st.markdown(f"""
-    <a href="/battery_scorecard?action=generate_report" target="_self" style="text-decoration: none;">
-        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{report_svg}</div>
-            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Generate AI Report</div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Export diagnostics</div>
+<div class="qa-grid">
+    <a class="qa-card-link" href="/battery_scorecard?action=add_vehicle" target="_self">
+        <div class="qa-card">
+            <div class="qa-icon-box">{plus_svg}</div>
+            <div class="qa-card-title">Add Vehicle</div>
+            <div class="qa-card-desc">Register new vehicle</div>
         </div>
     </a>
-    """, unsafe_allow_html=True)
-
-with col_qa4:
-    st.markdown(f"""
-    <a href="/battery_scorecard?action=import_dataset" target="_self" style="text-decoration: none;">
-        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{import_svg}</div>
-            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Import Dataset</div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Upload battery data</div>
+    <a class="qa-card-link" href="/battery_scorecard?action=run_prediction" target="_self">
+        <div class="qa-card">
+            <div class="qa-icon-box">{brain_svg}</div>
+            <div class="qa-card-title">Run Prediction</div>
+            <div class="qa-card-desc">AI health forecast</div>
         </div>
     </a>
-    """, unsafe_allow_html=True)
-
-with col_qa5:
-    st.markdown(f"""
-    <a href="/battery_scorecard?action=export_analytics" target="_self" style="text-decoration: none;">
-        <div class="card" style="padding: 20px; border-radius: var(--radius-lg); background-color: var(--card); border: 1px solid var(--border); transition: var(--transition); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;">
-            <div style="background: rgba(24, 231, 211, 0.04); padding: 10px; border-radius: 50%;">{export_svg}</div>
-            <div style="font-family: 'Space Grotesk', sans-serif; font-size: 0.9rem; font-weight: 700; color: var(--primary-text);">Export Analytics</div>
-            <div style="font-family: 'Inter', sans-serif; font-size: 0.72rem; color: var(--text);">Download CSV insights</div>
+    <a class="qa-card-link" href="/battery_scorecard?action=generate_report" target="_self">
+        <div class="qa-card">
+            <div class="qa-icon-box">{report_svg}</div>
+            <div class="qa-card-title">Generate AI Report</div>
+            <div class="qa-card-desc">Export diagnostics</div>
         </div>
     </a>
-    """, unsafe_allow_html=True)
+    <a class="qa-card-link" href="/battery_scorecard?action=import_dataset" target="_self">
+        <div class="qa-card">
+            <div class="qa-icon-box">{import_svg}</div>
+            <div class="qa-card-title">Import Dataset</div>
+            <div class="qa-card-desc">Upload battery data</div>
+        </div>
+    </a>
+    <a class="qa-card-link" href="/battery_scorecard?action=export_analytics" target="_self">
+        <div class="qa-card">
+            <div class="qa-icon-box">{export_svg}</div>
+            <div class="qa-card-title">Export Analytics</div>
+            <div class="qa-card-desc">Download CSV insights</div>
+        </div>
+    </a>
+</div>
+""", unsafe_allow_html=True)
 
 # =================================================================
 # SECTION 3 — ASSET DIAGNOSTICS PIPELINE
@@ -588,63 +644,6 @@ st.markdown("""
     <div class="section-label">Process Flow</div>
     <div class="section-title">Asset Diagnostics Pipeline</div>
 """, unsafe_allow_html=True)
-
-SEGMENT_HTML = """
-<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&display=swap');
-
-    :root {
-        --bg:       #080B0E;
-        --border:   #1E252D;
-        --accent:   #00D9B5;
-        --muted:    #5A6E7F;
-    }
-    [data-theme="light"] {
-        --bg:       #EEF3F2;
-        --border:   #D4E2DF;
-        --accent:   #17BFA8;
-        --muted:    #7D8B90;
-    }
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:var(--bg); padding:0 0 12px 0; transition:background .2s; }
-    .seg-bar { display:flex; align-items:center; border-bottom:1px solid var(--border); width:100%; }
-    .seg-tab { font-family:'JetBrains Mono',monospace; font-size:.68rem; font-weight:700;
-               text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
-               padding:10px 22px; cursor:pointer; border:none; background:transparent;
-               border-bottom:2px solid transparent; margin-bottom:-1px;
-               transition:color .15s,border-color .15s; }
-    .seg-tab:hover { color:#8B96A0; }
-    .seg-tab.active { color:var(--accent); border-bottom:2px solid var(--accent); }
-    .seg-sep { font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--border); padding:0 4px; user-select:none; }
-</style></head><body>
-<div class="seg-bar">
-    <button class="seg-tab active" onclick="setTab(this)">[ GLOBAL ]</button>
-    <span class="seg-sep">|</span>
-    <button class="seg-tab" onclick="setTab(this)">[ AT RISK ]</button>
-    <span class="seg-sep">|</span>
-    <button class="seg-tab" onclick="setTab(this)">[ OFFLINE ]</button>
-    <span class="seg-sep">|</span>
-    <button class="seg-tab" onclick="setTab(this)">[ CRITICAL ]</button>
-</div>
-<script>
-function setTab(el) { document.querySelectorAll('.seg-tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); }
-const s=window.parent.localStorage?window.parent.localStorage.getItem('tc_theme'):null;
-if(s==='light') document.documentElement.setAttribute('data-theme','light');
-
-// Theme change listener
-window.addEventListener('message', function(event) {
-    if (event.data && event.data.type === 'theme-change') {
-        if (event.data.theme === 'dark') {
-            document.documentElement.removeAttribute('data-theme');
-        } else {
-            document.documentElement.setAttribute('data-theme', 'light');
-        }
-    }
-});
-</script></body></html>
-"""
-components.html(SEGMENT_HTML, height=52, scrolling=False)
 
 PIPELINE_HTML = """
 <!DOCTYPE html><html><head><meta charset="utf-8">
